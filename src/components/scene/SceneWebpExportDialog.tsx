@@ -13,7 +13,8 @@ import { Slider } from '@/components/ui/slider'
 import { Switch } from '@/components/ui/switch'
 import { toast } from '@/components/ui/use-toast'
 import { cn } from '@/lib/utils'
-import type { SceneCard } from '@/stores/scene-store'
+import { useSceneStore, type SceneCard } from '@/stores/scene-store'
+import { characterExportFolderName, characterExportTargets } from '@/lib/character-asset-presets'
 import { useFolderStore } from '@/stores/folder-store'
 import { useSettingsStore } from '@/stores/settings-store'
 import { openFolder, resolveWorkRoot } from '@/lib/rell-folders'
@@ -61,6 +62,15 @@ export function SceneWebpExportDialog({ open, onOpenChange, presetId, presetName
     const linkedFolder = useFolderStore(state => state.links[presetId])
     const linkFolder = useFolderStore(state => state.linkFolder)
     const [folder, setFolder] = useState('')
+    // 캐릭터씬이면 그 캐릭터의 캐릭터씬을 전부 한 번에 내보낼 수 있다 (릭/A, 릭/B).
+    const presets = useSceneStore(state => state.presets)
+    const characterAsset = presets.find(preset => preset.id === presetId)?.characterAsset
+    const characterTargets = useMemo(
+        () => (characterAsset ? characterExportTargets(presets, characterAsset.characterPromptId) : []),
+        [presets, characterAsset],
+    )
+    const [exportAllOfCharacter, setExportAllOfCharacter] = useState(false)
+    const batch = !!characterAsset && exportAllOfCharacter && characterTargets.length > 0
     const [isExporting, setIsExporting] = useState(false)
     const [progress, setProgress] = useState(0)
 
@@ -69,16 +79,33 @@ export function SceneWebpExportDialog({ open, onOpenChange, presetId, presetName
         if (!open) return
         let cancelled = false
         setProgress(0)
+        if (batch && characterAsset) {
+            // 캐릭터 폴더를 고르면 그 아래에 작품별 폴더가 만들어진다.
+            void (async () => {
+                const base = await join(await resolveWorkRoot(), characterExportFolderName(characterAsset))
+                if (!cancelled) setFolder(base)
+            })().catch(() => { if (!cancelled) setFolder('') })
+            return () => { cancelled = true }
+        }
         if (linkedFolder) {
             setFolder(linkedFolder)
             return
         }
         void (async () => {
-            const fallback = await join(await resolveWorkRoot(), sanitizeSceneFolderName(presetName, 'Default'))
+            const root = await resolveWorkRoot()
+            const own = characterTargets.find(target => target.preset.id === presetId)
+            const fallback = characterAsset && own
+                ? await join(root, characterExportFolderName(characterAsset), own.folderName)
+                : await join(root, sanitizeSceneFolderName(presetName, 'Default'))
             if (!cancelled) setFolder(fallback)
         })().catch(() => { if (!cancelled) setFolder('') })
         return () => { cancelled = true }
-    }, [open, linkedFolder, presetName])
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [open, linkedFolder, presetName, batch])
+
+    useEffect(() => {
+        if (open) setExportAllOfCharacter(false)
+    }, [open, presetId])
 
     const plan = useMemo(() => planSceneWebpExport(scenes, {
         prefix: options.prefix,
@@ -87,34 +114,64 @@ export function SceneWebpExportDialog({ open, onOpenChange, presetId, presetName
         scope: options.scope,
     }), [scenes, options.prefix, options.start, options.pad, options.scope])
 
+    // 일괄 내보내기: 캐릭터씬마다 같은 이름 규칙으로 따로 번호를 붙인다.
+    const batchPlans = useMemo(() => (batch
+        ? characterTargets.map(target => ({
+            folderName: target.folderName,
+            presetId: target.preset.id,
+            plan: planSceneWebpExport((target.preset as { scenes: SceneCard[] }).scenes, {
+                prefix: options.prefix, start: options.start, pad: options.pad, scope: options.scope,
+            }),
+        }))
+        : []), [batch, characterTargets, options.prefix, options.start, options.pad, options.scope])
+    const batchImageCount = batchPlans.reduce((sum, item) => sum + item.plan.entries.length, 0)
+    const exportCount = batch ? batchImageCount : plan.entries.length
+
     const handleBrowse = async () => {
         const selected = await openDialog({ directory: true, multiple: false, defaultPath: folder || undefined })
         if (selected && typeof selected === 'string') setFolder(selected)
     }
 
     const handleExport = async () => {
-        if (plan.entries.length === 0 || !folder.trim()) return
+        if (exportCount === 0 || !folder.trim()) return
         setIsExporting(true)
         setProgress(0)
         const exportId = `scene-webp-${Date.now()}`
         let unlisten: (() => void) | null = null
         try {
+            // 한 폴더 또는 (일괄일 때) 작품별 폴더 여러 개
+            const jobs = batch
+                ? await Promise.all(batchPlans.filter(item => item.plan.entries.length > 0).map(async item => ({
+                    outputDir: await join(folder.trim(), item.folderName),
+                    entries: item.plan.entries,
+                })))
+                : [{ outputDir: folder.trim(), entries: plan.entries }]
+            let finishedBefore = 0
             unlisten = await listen<ExportProgress>('scene-zip-progress', ({ payload }) => {
-                if (payload.exportId === exportId) setProgress(Math.round((payload.completed / payload.total) * 100))
+                if (payload.exportId === exportId) setProgress(Math.round(((finishedBefore + payload.completed) / exportCount) * 100))
             })
-            const result = await invoke<FolderExportResult>('export_scene_images_folder', {
-                outputDir: folder.trim(),
-                entries: plan.entries.map(entry => ({ source: entry.source, fileName: entry.fileName })),
-                lossless: options.lossless,
-                quality: options.quality,
-                exportId,
-            })
+            const result: FolderExportResult = { exportedCount: 0, skippedCount: 0, skipped: [], bytesBefore: 0, bytesAfter: 0 }
+            for (const job of jobs) {
+                const part = await invoke<FolderExportResult>('export_scene_images_folder', {
+                    outputDir: job.outputDir,
+                    entries: job.entries.map(entry => ({ source: entry.source, fileName: entry.fileName })),
+                    lossless: options.lossless,
+                    quality: options.quality,
+                    exportId,
+                })
+                finishedBefore += job.entries.length
+                result.exportedCount += part.exportedCount
+                result.skippedCount += part.skippedCount
+                result.skipped.push(...part.skipped)
+                result.bytesBefore += part.bytesBefore
+                result.bytesAfter += part.bytesAfter
+            }
             if (result.exportedCount === 0) {
                 toast({ title: t('scene.webpExport.nothing', '내보낸 이미지가 없습니다'), variant: 'destructive' })
                 return
             }
-            // 다음에도 같은 폴더를 쓰도록 이 작품에 연결해 둔다.
-            linkFolder(presetId, folder.trim())
+            // 다음에도 같은 폴더를 쓰도록 이 작품에 연결해 둔다 (일괄일 때는 캐릭터 폴더라 연결하지 않는다).
+            if (!batch) linkFolder(presetId, folder.trim())
             const saved = result.bytesBefore > 0 ? Math.round((1 - result.bytesAfter / result.bytesBefore) * 100) : 0
             toast({
                 title: t('scene.webpExport.done', '{{n}}장을 WebP로 내보냈어요', { n: result.exportedCount }),
@@ -155,6 +212,19 @@ export function SceneWebpExportDialog({ open, onOpenChange, presetId, presetName
                 </DialogHeader>
 
                 <div className="grid gap-4 py-2">
+                    {characterAsset && characterTargets.length > 0 && (
+                        <label className="flex items-center justify-between gap-3 rounded-lg border border-primary/40 bg-primary/5 px-3 py-2 text-sm" data-character-batch>
+                            <span>
+                                {t('scene.webpExport.characterAll', "'{{name}}'의 캐릭터씬 {{n}}개 모두 내보내기", { name: characterAsset.characterName, n: characterTargets.length })}
+                                <span className="block text-xs text-muted-foreground">
+                                    {t('scene.webpExport.characterAllHelp', '캐릭터 폴더 아래에 작품별 폴더로 나눠 담습니다: {{folders}}', {
+                                        folders: characterTargets.slice(0, 3).map(target => `${characterExportFolderName(characterAsset)}/${target.folderName}`).join(', ') + (characterTargets.length > 3 ? ' …' : ''),
+                                    })}
+                                </span>
+                            </span>
+                            <Switch checked={exportAllOfCharacter} onChange={event => setExportAllOfCharacter(event.target.checked)} disabled={isExporting} />
+                        </label>
+                    )}
                     <div className="grid gap-2">
                         <Label>{t('scene.webpExport.naming', '파일 이름')}</Label>
                         <div className="flex items-center gap-2">
@@ -180,10 +250,18 @@ export function SceneWebpExportDialog({ open, onOpenChange, presetId, presetName
                             <Switch checked={options.pad} onChange={event => setOptions({ pad: event.target.checked })} disabled={isExporting} />
                         </label>
                         <p className="rounded-md bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
-                            {plan.entries.length > 0
-                                ? `${previewExportNames(plan.entries)}  (${t('scene.webpExport.count', '{{n}}장', { n: plan.entries.length })})`
-                                : t('scene.webpExport.noImages', '내보낼 이미지가 없습니다')}
-                            {plan.emptyScenes.length > 0 && (
+                            {batch
+                                ? batchPlans.map(item => (
+                                    <span key={item.presetId} className="block">
+                                        {item.folderName}: {item.plan.entries.length > 0
+                                            ? `${previewExportNames(item.plan.entries)} (${t('scene.webpExport.count', '{{n}}장', { n: item.plan.entries.length })})`
+                                            : t('scene.webpExport.noImages', '내보낼 이미지가 없습니다')}
+                                    </span>
+                                ))
+                                : plan.entries.length > 0
+                                    ? `${previewExportNames(plan.entries)}  (${t('scene.webpExport.count', '{{n}}장', { n: plan.entries.length })})`
+                                    : t('scene.webpExport.noImages', '내보낼 이미지가 없습니다')}
+                            {!batch && plan.emptyScenes.length > 0 && (
                                 <span className="mt-1 block">
                                     {t('scene.webpExport.empty', '이미지가 없는 씬 {{n}}개는 번호만 비워 둡니다.', { n: plan.emptyScenes.length })}
                                 </span>
@@ -226,7 +304,7 @@ export function SceneWebpExportDialog({ open, onOpenChange, presetId, presetName
                     </div>
 
                     <div className="grid gap-2">
-                        <Label>{t('scene.webpExport.folder', '저장할 폴더')}</Label>
+                        <Label>{batch ? t('scene.webpExport.characterFolder', '캐릭터 폴더 (이 아래에 작품별 폴더가 생깁니다)') : t('scene.webpExport.folder', '저장할 폴더')}</Label>
                         <div className="flex gap-2">
                             <Input value={folder} onChange={event => setFolder(event.target.value)} disabled={isExporting} className="flex-1 text-xs" />
                             <Button type="button" variant="outline" size="icon" onClick={() => void handleBrowse()} disabled={isExporting} aria-label={t('scene.webpExport.browse', '폴더 선택')}>
@@ -245,7 +323,7 @@ export function SceneWebpExportDialog({ open, onOpenChange, presetId, presetName
                     </span>
                     <div className="flex gap-2">
                         <Button variant="outline" onClick={() => onOpenChange(false)} disabled={isExporting}>{t('common.cancel')}</Button>
-                        <Button onClick={() => void handleExport()} disabled={isExporting || plan.entries.length === 0 || !folder.trim()}>
+                        <Button onClick={() => void handleExport()} disabled={isExporting || exportCount === 0 || !folder.trim()}>
                             {isExporting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                             {t('scene.webpExport.run', '내보내기')}
                         </Button>

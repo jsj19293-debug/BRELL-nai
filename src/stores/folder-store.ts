@@ -7,7 +7,7 @@ import { indexedDBStorage } from '@/lib/indexed-db'
  * 씬 모드의 WebP 내보내기는 연결된 폴더를 기본 저장 위치로 쓴다.
  */
 interface FolderState {
-    /** 작품 폴더들을 모아 두는 위치. 비어 있으면 사진 폴더 아래 NAIS2_RELL */
+    /** 작품 폴더들을 모아 두는 위치. 비어 있으면 사진 폴더 아래 Nightmare2 */
     rootPath: string
     /** 씬 프리셋 id → 연결된 폴더 경로 */
     links: Record<string, string>

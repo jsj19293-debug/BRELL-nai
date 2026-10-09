@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import { notifyGenerationDone } from '@/lib/generation-notify'
+import { logGeneratedImage } from '@/services/work-log-service'
 import { persist, createJSONStorage } from 'zustand/middleware'
 import { indexedDBStorage } from '@/lib/indexed-db'
 import { useAuthStore } from './auth-store'
@@ -720,6 +721,7 @@ export const useGenerationStore = create<GenerationState>()(
                                 }
                             }
 
+                            logGeneratedImage(model)
                             // Refresh Anlas balance
                             useAuthStore.getState().refreshAnlas()
 

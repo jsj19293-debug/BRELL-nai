@@ -226,6 +226,11 @@ function SortablePresetDropdownRow({ preset, isActive, disabled, onSelect, t }: 
                 onClick={onSelect}
                 disabled={disabled}
             >
+                {preset.characterAsset && (
+                    <span className="shrink-0 rounded bg-primary/15 px-1 text-[10px] font-semibold text-primary" title={t('characterAsset.tag', '캐릭터씬')}>
+                        {t('characterAsset.tagShort', '캐릭터')}
+                    </span>
+                )}
                 <span className="min-w-0 flex-1 truncate">
                     {preset.id === 'scene-default' ? t('scene.presetDefault', '기본') : preset.name}
                 </span>

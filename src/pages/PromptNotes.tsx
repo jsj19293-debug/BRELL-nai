@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import {
-    ArrowDown, ArrowUp, BookOpen, Check, Copy, FileText, Globe2, Languages, Loader2, NotebookPen, Pencil, Plus, Search, StickyNote, Trash2, Upload,
+    ArrowDown, ArrowUp, BookOpen, Check, Copy, Download, FileText, Globe2, Languages, Loader2, NotebookPen, Pencil, Plus, Search, StickyNote, Trash2, Upload,
 } from 'lucide-react'
 import { open as openDialog, save } from '@tauri-apps/plugin-dialog'
 import { readTextFile, writeTextFile } from '@tauri-apps/plugin-fs'
@@ -18,7 +18,7 @@ import { useSettingsStore } from '@/stores/settings-store'
 import {
     LORE_CONTENT_MAX_CHARS, LORE_KEYWORDS_MAX_CHARS, LORE_MAX_ENTRIES, LORE_TITLE_MAX_CHARS, MEMO_MAX_CHARS, MEMO_MAX_COUNT,
     MEMO_TITLE_MAX_CHARS, PROJECT_MAX_COUNT, PROJECT_NAME_MAX_CHARS, WORLD_MAX_CHARS,
-    clampChars, countChars, filterLore, formatLoreEntry, formatLoreTxt, formatProject, loreTxtFileName, parseKeywords, parseLoreTxt, totalLoreChars,
+    clampChars, countChars, exportNotesJson, filterLore, formatLoreEntry, formatLoreTxt, formatProject, loreTxtFileName, parseKeywords, parseLoreTxt, parseNotesJson, totalLoreChars,
     type PromptProject,
 } from '@/lib/prompt-notes'
 import {
@@ -568,6 +568,7 @@ export default function PromptNotes() {
     const renameProject = usePromptNotesStore(state => state.renameProject)
     const deleteProject = usePromptNotesStore(state => state.deleteProject)
     const setActiveProject = usePromptNotesStore(state => state.setActiveProject)
+    const importProjects = usePromptNotesStore(state => state.importProjects)
 
     const [tab, setTab] = useState<NotesTab>('world')
     const [newName, setNewName] = useState('')
@@ -582,6 +583,38 @@ export default function PromptNotes() {
         if (!newName.trim()) return
         if (addProject(newName)) setNewName('')
         else toast({ title: t('notes.projectsFull', '작품은 {{n}}개까지 만들 수 있어요', { n: PROJECT_MAX_COUNT }) })
+    }
+    const handleExportJson = async () => {
+        try {
+            const path = await save({ defaultPath: `Nightmare2_프롬프트_${new Date().toISOString().slice(0, 10)}.json`, filters: [{ name: 'JSON', extensions: ['json'] }] })
+            if (!path) return
+            await writeTextFile(path, exportNotesJson(projects, Date.now()))
+            toast({ title: t('notes.json.exported', '작품 {{n}}개를 JSON으로 저장했어요', { n: projects.length }), description: path, variant: 'success' })
+        } catch (error) {
+            console.error('Failed to export prompt notes:', error)
+            toast({ title: t('notes.json.exportFailed', 'JSON으로 저장하지 못했어요'), description: String(error), variant: 'destructive' })
+        }
+    }
+    const handleImportJson = async () => {
+        try {
+            const path = await openDialog({ multiple: false, filters: [{ name: 'JSON', extensions: ['json'] }] })
+            if (!path || typeof path !== 'string') return
+            const imported = parseNotesJson(await readTextFile(path))
+            const added = importProjects(imported)
+            toast({
+                title: added > 0 ? t('notes.json.imported', '작품 {{n}}개를 불러왔어요', { n: added }) : t('notes.json.importNone', '불러올 작품이 없습니다'),
+                description: added < imported.length ? t('notes.json.importCapped', '{{n}}개는 작품 수 한도 때문에 넣지 못했어요', { n: imported.length - added }) : undefined,
+                variant: added > 0 ? 'success' : 'destructive',
+            })
+        } catch (error) {
+            console.error('Failed to import prompt notes:', error)
+            const reason = String((error as { message?: unknown })?.message ?? error)
+            toast({
+                title: t('notes.json.importFailed', 'JSON을 불러오지 못했어요'),
+                description: /NOT_PROMPT_NOTES|INVALID_JSON/.test(reason) ? t('notes.json.importWrongFile', '프롬프트 관리에서 저장한 JSON 파일이 아닙니다.') : reason,
+                variant: 'destructive',
+            })
+        }
     }
     const sendToTranslator = (text: string) => {
         setTranslateSource(clampChars(text, TRANSLATE_MAX_CHARS))
@@ -673,6 +706,20 @@ export default function PromptNotes() {
                         </li>
                     )}
                 </ul>
+                <div className="flex gap-2 border-t border-border/40 p-3">
+                    <Tip content={t('notes.json.exportTip', '모든 작품의 세계관 · 로어북 · 키워드 · 메모를 JSON 한 파일로 저장합니다')}>
+                        <Button variant="outline" size="sm" className="h-8 flex-1 text-xs" onClick={() => void handleExportJson()} disabled={projects.length === 0}>
+                            <Download className="mr-1 h-3.5 w-3.5" />
+                            {t('notes.json.export', 'JSON 저장')}
+                        </Button>
+                    </Tip>
+                    <Tip content={t('notes.json.importTip', '저장해 둔 JSON을 불러옵니다. 지금 있는 작품은 그대로 두고 뒤에 더해요.')}>
+                        <Button variant="outline" size="sm" className="h-8 flex-1 text-xs" onClick={() => void handleImportJson()}>
+                            <Upload className="mr-1 h-3.5 w-3.5" />
+                            {t('notes.json.import', '불러오기')}
+                        </Button>
+                    </Tip>
+                </div>
             </aside>
 
             {/* 본문 */}

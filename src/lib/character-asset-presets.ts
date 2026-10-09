@@ -161,3 +161,40 @@ export function resolveCharacterAssetOverride(
         characterReferenceIds: asset.referenceIds.filter(id => referenceIds.includes(id)),
     }
 }
+
+const safeFolderName = (name: string, fallback: string) =>
+    name.replace(/[<>:"/\\|?*\u0000-\u001f]/g, '_').trim().replace(/[. ]+$/, '') || fallback
+
+export interface CharacterExportTarget<Preset> {
+    preset: Preset
+    /** 캐릭터 폴더 아래에 만들 폴더 이름 (원본 작품 이름) */
+    folderName: string
+}
+
+/** 캐릭터 폴더 이름 (예: "릭") */
+export function characterExportFolderName(asset: Pick<CharacterAssetInfo, 'characterName'>): string {
+    return safeFolderName(asset.characterName, '캐릭터')
+}
+
+/**
+ * 한 캐릭터의 캐릭터씬들을 한 번에 내보낼 때의 목록: "릭 - A", "릭 - B" → 릭/A, 릭/B.
+ * 폴더 이름은 원본 작품 이름이고, 원본이 지워졌으면 캐릭터씬 이름에서 "캐릭터 - "를 뗀 것을 쓴다.
+ */
+export function characterExportTargets<Preset extends AssetPreset>(
+    presets: readonly Preset[],
+    characterPromptId: string,
+): CharacterExportTarget<Preset>[] {
+    const taken = new Set<string>()
+    return presets
+        .filter(preset => preset.characterAsset?.characterPromptId === characterPromptId)
+        .map(preset => {
+            const asset = preset.characterAsset!
+            const parent = presets.find(candidate => candidate.id === asset.parentPresetId)
+            const prefix = `${asset.characterName} - `
+            const base = safeFolderName(parent?.name ?? (preset.name.startsWith(prefix) ? preset.name.slice(prefix.length) : preset.name), '작품')
+            let folderName = base
+            for (let index = 2; taken.has(folderName.toLocaleLowerCase()); index++) folderName = `${base} (${index})`
+            taken.add(folderName.toLocaleLowerCase())
+            return { preset, folderName }
+        })
+}

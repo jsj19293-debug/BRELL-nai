@@ -11,6 +11,7 @@ import { DrawOverHost } from '@/components/tools/DrawOverHost'
 import { AnnouncementDialog } from '@/components/AnnouncementDialog'
 import { startInboxInBackground } from '@/inbox'
 import { installBlurMode } from '@/lib/blur-mode'
+import { installWorkLog } from '@/services/work-log-service'
 
 const SceneMode = lazy(() => import('@/pages/SceneMode'))
 const SceneDetail = lazy(() => import('@/pages/SceneDetail'))
@@ -34,6 +35,7 @@ function AppContent() {
     useEffect(() => {
         startInboxInBackground()
         installBlurMode()
+        installWorkLog()
     }, [])
 
     // Disable right-click globally except for allowed elements

@@ -41,7 +41,7 @@ export function MainLayout({ children }: MainLayoutProps) {
                     {!collapsed && (
                         <div className="flex items-center gap-2">
                             <Sparkles className="h-6 w-6 text-primary" />
-                            <span className="text-lg font-bold text-gradient">NAIS2</span>
+                            <span className="text-lg font-bold text-gradient">Nightmare 2</span>
                         </div>
                     )}
                     <button

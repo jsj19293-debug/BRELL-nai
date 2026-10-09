@@ -73,6 +73,28 @@ assert.equal(clampAssetQueueCount('x'), 1)
     assert.equal(resolveCharacterAssetOverride(null, true, ['rick'], []), null)
 }
 
+// --- 캐릭터씬 일괄 내보내기: 릭/A, 릭/B ---
+{
+    const { characterExportFolderName, characterExportTargets } = await import('../src/lib/character-asset-presets.ts')
+    const asset = (parentPresetId, characterPromptId, characterName) => ({ parentPresetId, characterPromptId, characterName, referenceIds: [] })
+    const list = [
+        { id: 'A', name: 'A: 본편', scenes: [], createdAt: 1 },
+        { id: 'B', name: 'B', scenes: [], createdAt: 2 },
+        { id: 'ra', name: '릭 - A: 본편', scenes: [], createdAt: 3, characterAsset: asset('A', 'rick', '릭') },
+        { id: 'rb', name: '릭 - B', scenes: [], createdAt: 4, characterAsset: asset('B', 'rick', '릭') },
+        { id: 'rgone', name: '릭 - 지워진 작품', scenes: [], createdAt: 5, characterAsset: asset('gone', 'rick', '릭') },
+        { id: 'rdup', name: '이름 바꾼 것', scenes: [], createdAt: 6, characterAsset: asset('B', 'rick', '릭') },
+        { id: 'la', name: '루나 - A: 본편', scenes: [], createdAt: 7, characterAsset: asset('A', 'luna', '루나') },
+    ]
+    assert.deepEqual(characterExportTargets(list, 'rick').map(target => [target.preset.id, target.folderName]), [
+        ['ra', 'A_ 본편'], ['rb', 'B'], ['rgone', '지워진 작품'], ['rdup', 'B (2)'],
+    ])
+    assert.deepEqual(characterExportTargets(list, 'luna').map(target => target.folderName), ['A_ 본편'])
+    assert.deepEqual(characterExportTargets(list, 'nobody'), [])
+    assert.equal(characterExportFolderName({ characterName: '릭/Rick?' }), '릭_Rick_')
+    assert.equal(characterExportFolderName({ characterName: ' . ' }), '캐릭터')
+}
+
 // --- 프롬프트 관리 JSON 저장 · 불러오기 ---
 {
     const { exportNotesJson, mergeImportedProjects, parseNotesJson } = await import('../src/lib/prompt-notes.ts')

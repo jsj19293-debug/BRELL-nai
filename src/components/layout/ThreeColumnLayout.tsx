@@ -8,6 +8,7 @@ import { HistoryPanel } from './HistoryPanel'
 import { AnimatedNavBar } from './AnimatedNavBar'
 import { CustomTitleBar } from './CustomTitleBar'
 import { RemoteControl } from '@/components/RemoteControl'
+import { WorkLogButton } from '@/components/account/WorkLogDialog'
 import { PresetDropdown } from '@/components/preset/PresetDropdown'
 import { FragmentPromptDialog } from '@/components/fragments/FragmentPromptDialog'
 import { useAuthStore } from '@/stores/auth-store'
@@ -390,7 +391,7 @@ export function ThreeColumnLayout({ children }: ThreeColumnLayoutProps) {
             </button>
         </Tip>
     )
-    const accountControls = <div className="flex items-center gap-1">{accountMenu}{accountSettings}<RemoteControl />{blurToggle}</div>
+    const accountControls = <div className="flex items-center gap-1">{accountMenu}{accountSettings}<RemoteControl /><WorkLogButton />{blurToggle}</div>
 
     return (
         <div className="flex flex-col h-screen bg-background overflow-hidden">

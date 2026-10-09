@@ -3,7 +3,7 @@ import { persist, createJSONStorage } from 'zustand/middleware'
 import { indexedDBStorage } from '@/lib/indexed-db'
 import {
     PROJECT_MAX_COUNT, PROJECT_NAME_MAX_CHARS, WORLD_MAX_CHARS, IMAGES_MAX_PER_ITEM, LORE_MAX_ENTRIES,
-    canAddLore, canAddMemo, clampChars, createProject, normalizeLore, normalizeMemo,
+    canAddLore, canAddMemo, clampChars, createProject, mergeImportedProjects, normalizeLore, normalizeMemo,
     type LoreEntry, type MemoNote, type PromptProject,
 } from '@/lib/prompt-notes'
 
@@ -17,6 +17,8 @@ interface PromptNotesState {
     renameProject: (id: string, name: string) => void
     deleteProject: (id: string) => void
     setActiveProject: (id: string) => void
+    /** JSON에서 읽은 작품들을 뒤에 더한다. 넣은 개수를 돌려준다. */
+    importProjects: (projects: PromptProject[]) => number
 
     setWorld: (projectId: string, world: string) => void
     setWorldImages: (projectId: string, images: string[]) => void
@@ -64,6 +66,13 @@ export const usePromptNotesStore = create<PromptNotesState>()(
                     }
                 }),
                 setActiveProject: (id) => set({ activeProjectId: id }),
+                importProjects: (imported) => {
+                    const merged = mergeImportedProjects(get().projects, imported, PROJECT_MAX_COUNT, newId)
+                    if (merged.added > 0) {
+                        set(state => ({ projects: merged.projects, activeProjectId: state.activeProjectId ?? merged.projects[0]?.id ?? null }))
+                    }
+                    return merged.added
+                },
 
                 setWorld: (projectId, world) => patchProject(projectId, project => ({
                     ...project,

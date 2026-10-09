@@ -23,6 +23,8 @@
     "check:scene-webp-export": "node --experimental-strip-types scripts/check-scene-webp-export.mjs",
     "check:prompt-notes": "node --experimental-strip-types scripts/check-prompt-notes.mjs",
     "check:translator": "node --experimental-strip-types scripts/check-translator.mjs",
+    "check:character-asset": "node --experimental-strip-types scripts/check-character-asset.mjs",
+    "check:work-log": "node --experimental-strip-types scripts/check-work-log.mjs",
     "check:installer-continuity": "node scripts/check-installer-continuity.mjs",
     "check:model-capabilities": "node --experimental-strip-types scripts/check-model-capabilities.mjs",
     "check:tokenizer": "node scripts/check-tokenizer.mjs",

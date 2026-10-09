@@ -1,0 +1,52 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <defs>
+    <radialGradient id="bg" cx="50%" cy="34%" r="80%">
+      <stop offset="0" stop-color="#2a1d45"/>
+      <stop offset="0.55" stop-color="#120c22"/>
+      <stop offset="1" stop-color="#06040c"/>
+    </radialGradient>
+    <linearGradient id="gold" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#f6e3a8"/>
+      <stop offset="0.45" stop-color="#d4a94f"/>
+      <stop offset="1" stop-color="#8f6a26"/>
+    </linearGradient>
+    <linearGradient id="goldSoft" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#e9cf8a"/>
+      <stop offset="1" stop-color="#9c7630"/>
+    </linearGradient>
+    <mask id="crescent">
+      <rect width="1024" height="1024" fill="black"/>
+      <circle cx="512" cy="440" r="296" fill="white"/>
+      <circle cx="592" cy="384" r="262" fill="black"/>
+    </mask>
+    <clipPath id="tile"><rect x="40" y="40" width="944" height="944" rx="212"/></clipPath>
+  </defs>
+
+  <rect x="40" y="40" width="944" height="944" rx="212" fill="url(#bg)"/>
+  <g clip-path="url(#tile)">
+    <!-- 초승달 -->
+    <rect width="1024" height="1024" fill="url(#goldSoft)" mask="url(#crescent)" opacity="0.6"/>
+    <!-- 별 -->
+    <g fill="#f3deA0">
+      <path d="M742 250 l9 24 24 9 -24 9 -9 24 -9 -24 -24 -9 24 -9z"/>
+      <path d="M812 372 l6 15 15 6 -15 6 -6 15 -6 -15 -15 -6 15 -6z" opacity="0.8"/>
+      <circle cx="676" cy="330" r="6" opacity="0.75"/>
+      <circle cx="786" cy="486" r="5" opacity="0.6"/>
+    </g>
+  </g>
+
+  <!-- 이중 금테 -->
+  <rect x="70" y="70" width="884" height="884" rx="186" fill="none" stroke="url(#gold)" stroke-width="14"/>
+  <rect x="100" y="100" width="824" height="824" rx="160" fill="none" stroke="#b08a3e" stroke-width="4" opacity="0.7"/>
+
+  <!-- N -->
+  <text x="520" y="622" text-anchor="middle" font-family="'Liberation Serif','DejaVu Serif',serif" font-weight="700" font-size="560" fill="url(#gold)" stroke="#3a2a0c" stroke-width="8" paint-order="stroke">N</text>
+
+  <!-- II -->
+  <g fill="url(#gold)">
+    <rect x="386" y="776" width="96" height="6" rx="3" opacity="0.8"/>
+    <rect x="542" y="776" width="96" height="6" rx="3" opacity="0.8"/>
+    <path d="M512 758 l14 21 -14 21 -14 -21z"/>
+  </g>
+  <text x="512" y="872" text-anchor="middle" font-family="'Liberation Serif','DejaVu Serif',serif" font-weight="700" font-size="92" letter-spacing="14" fill="url(#gold)">II</text>
+</svg>

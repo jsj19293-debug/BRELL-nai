@@ -8,7 +8,9 @@ import { useSettingsStore } from '@/stores/settings-store'
 import { getSceneFolderFromImages, sanitizeSceneFolderName } from '@/lib/scene-path'
 import { pathKey, type FolderFile } from '@/lib/scene-folder-sync'
 
-export const DEFAULT_WORK_ROOT_NAME = 'NAIS2_RELL'
+export const DEFAULT_WORK_ROOT_NAME = 'Nightmare2'
+/** 이름을 바꾸기 전에 쓰던 기본 폴더. 이미 있으면 그 폴더를 계속 쓴다. */
+export const LEGACY_WORK_ROOT_NAME = 'NAIS2_RELL'
 
 export interface WorkFolder {
     name: string
@@ -23,10 +25,14 @@ export interface FolderImages {
     files: FolderFile[]
 }
 
-/** 작품 폴더들을 모아 두는 위치 (설정하지 않았으면 사진 폴더 아래 NAIS2_RELL). */
+/** 작품 폴더들을 모아 두는 위치 (설정하지 않았으면 사진 폴더 아래 Nightmare2). */
 export async function resolveWorkRoot(): Promise<string> {
     const configured = useFolderStore.getState().rootPath
-    return configured || join(await pictureDir(), DEFAULT_WORK_ROOT_NAME)
+    if (configured) return configured
+    const pictures = await pictureDir()
+    const legacy = await join(pictures, LEGACY_WORK_ROOT_NAME)
+    if (await exists(legacy).catch(() => false)) return legacy
+    return join(pictures, DEFAULT_WORK_ROOT_NAME)
 }
 
 export async function ensureFolder(path: string): Promise<void> {

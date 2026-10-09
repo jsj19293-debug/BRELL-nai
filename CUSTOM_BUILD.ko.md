@@ -1,7 +1,7 @@
-# NAIS 2 RELL 0.5 빌드 안내 (NAIS2-Forge v1.13.0 기반)
+# Nightmare 2 (0.5) 빌드 안내 (NAIS2-Forge v1.13.0 기반)
 
 NAIS2-Forge에 아래 기능을 더하고, 쓰지 않는 기능을 뺀 빌드입니다.
-`main`에 올리면 GitHub Actions가 설치 파일을 만들어 줍니다 (Actions 탭 → 최근 실행 → Artifacts → `NAIS2-RELL-installer`).
+`main`에 올리면 GitHub Actions가 설치 파일을 만들어 줍니다 (Actions 탭 → 최근 실행 → Artifacts → `Nightmare-2-installer`).
 
 ## 추가된 기능
 
@@ -19,6 +19,12 @@ NAIS2-Forge에 아래 기능을 더하고, 쓰지 않는 기능을 뺀 빌드입
 | 폴더 관리자 (작품 폴더 만들기·열기·씬 작품과 연결) | 상단 메뉴 "폴더" |
 | 프롬프트 관리: 작품별 세계관(1만 자) · 로어북(항목당 500자, 150개, `## 01 제목` 양식 txt 저장·가져오기) · 메모, 이미지 첨부 | 상단 메뉴 "프롬프트" |
 | 번역기: 한국어 → 영어 · 중국어(번체) · 일본어 (DeepL 키가 있으면 DeepL, 없으면 무료 번역으로 1,000자까지) | 프롬프트 관리의 "번역기" 탭 |
+| 프롬프트 관리 전체 JSON 저장 · 불러오기 | 프롬프트 화면 왼쪽 아래 |
+| 캐릭터 에셋 뽑기: 고른 작품의 씬 전체를 "캐릭터 이름 - 작품 이름"으로 복제, 그 캐릭터와 고른 레퍼런스로만 생성 | 캐릭터 창의 버튼, 설정 > 테마에서 끄기 |
+| 캐릭터씬 일괄 내보내기 (릭/A, 릭/B 폴더) | 캐릭터씬에서 WebP 내보내기 창의 스위치 |
+| 작업 기록: 날짜별 · 모델별 장수, Anlas, V5 사용량 | 상단 왼쪽 시계 모양 버튼 |
+| 생성 완료 PC 알림 · 소리 | 설정 > 테마 |
+| 블러 모드 단축키 (기본은 비어 있음) | 설정 > 단축키 |
 
 ## 뺀 기능
 
@@ -52,12 +58,12 @@ npm install
 npm run tauri:build:local
 ```
 
-끝나면 `src-tauri/target/release/bundle/nsis/` 안에 `NAIS2-RELL_0.5.0_x64-setup.exe`가 생깁니다.
+끝나면 `src-tauri/target/release/bundle/nsis/` 안에 `Nightmare 2_0.5.0_x64-setup.exe`가 생깁니다.
 
 - `tauri:build:local`은 업데이트 서명 없이 빌드합니다. 원본의 `tauri:build`는 제작자의 서명 키가 있어야 해서
   그대로는 마지막 단계에서 실패합니다.
-- NAIS 2 RELL은 NAIS2-Forge와 **다른 이름으로 따로 설치**되지만, 데이터(프리셋·씬·설정)는 같은 곳을 씁니다.
-  두 앱을 동시에 켜지 말고, 예전 NAIS2-Forge(커스텀 빌드 포함)는 제거해도 됩니다. 제거할 때
+- Nightmare 2는 NAIS2-Forge와 **다른 이름으로 따로 설치**되지만, 데이터(프리셋·씬·설정)는 같은 곳을 씁니다.
+  두 앱을 동시에 켜지 말고, 예전 NAIS2-Forge와 NAIS2-RELL(이전 이름의 빌드)은 제거해도 됩니다. 제거할 때
   "앱 데이터 삭제"는 체크하지 마세요. 설치 전에 설정 > 백업에서 한 번 내보내 두는 것을 권합니다.
 - 공식 자동 업데이트는 꺼져 있습니다. 새 버전은 새 설치 파일을 받아 덮어 설치합니다.
 
@@ -72,6 +78,8 @@ npm run check:scene-i2i-cycle
 npm run check:scene-webp-export
 npm run check:prompt-notes
 npm run check:translator
+npm run check:character-asset
+npm run check:work-log
 npm run build
 cargo test --manifest-path src-tauri/Cargo.toml _native
 ```

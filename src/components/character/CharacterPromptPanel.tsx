@@ -1360,6 +1360,7 @@ export function CharacterPromptPanel({ open, onOpenChange }: CharacterPromptPane
                         </div>
                     </div>
                 )}
+                {characterAssetScenesEnabled && <CharacterAssetDialog open={assetDialogOpen} onOpenChange={setAssetDialogOpen} />}
                 <ConfirmDialog
                     open={bulkDeleteOpen}
                     onOpenChange={setBulkDeleteOpen}

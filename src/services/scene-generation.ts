@@ -11,6 +11,7 @@ import { buildGenerationRequest } from '@/lib/generation-request'
 import { getModelCapabilities } from '@/lib/model-capabilities'
 import { useCharacterStore } from '@/stores/character-store'
 import { resolveCharacterAssetOverride } from '@/lib/character-asset-presets'
+import { logGeneratedImage } from '@/services/work-log-service'
 import { getRandomCharacterCandidates, pickRandomCharacters } from '@/lib/random-character-selection'
 import { SCENE_IMAGE_GENERATED_EVENT } from '@/lib/scene-review-generation'
 import {
@@ -426,6 +427,7 @@ export async function generateSceneImage(options: {
             }))
 
             addImageToScene(activePresetId, scene.id, fullPath, sceneFolderPath)
+            logGeneratedImage(genState.model)
             options.onSaved?.({ path: fullPath, seed: finalSeed, characterPromptIds: [...characterPromptIds] })
 
         } catch (saveError) {

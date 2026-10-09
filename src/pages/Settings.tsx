@@ -55,6 +55,7 @@ import { toast } from '@/components/ui/use-toast'
 import NovelAILogo from '@/assets/novelai_logo.svg'
 import { open, save } from '@tauri-apps/plugin-dialog'
 import { checkForAppUpdate } from '@/lib/app-updater'
+import { playDoneSound } from '@/lib/generation-notify'
 import { relaunch } from '@tauri-apps/plugin-process'
 import { getVersion } from '@tauri-apps/api/app'
 import { useUpdateStore, setCurrentUpdateObject, installPendingUpdate } from '@/stores/update-store'
@@ -102,6 +103,11 @@ export default function Settings() {
     const { savePath, autoSave, setSavePath, setAutoSave, promptFontSize, setPromptFontSize, useStreaming, setUseStreaming, generationDelay, setGenerationDelay, useAbsolutePath, libraryPath, useAbsoluteLibraryPath, setLibraryPath, imageFormat, setImageFormat, promptWhitespaceMode, setPromptWhitespaceMode, removeEmptyPromptSeparators, setRemoveEmptyPromptSeparators, insertBlankLinesBetweenPromptParts, setInsertBlankLinesBetweenPromptParts, expertCharacterPromptFolderBrowserEnabled, setExpertCharacterPromptFolderBrowserEnabled, expertLibraryFolderBrowserEnabled, setExpertLibraryFolderBrowserEnabled, expertCharacterPromptLayoutEnabled, setExpertCharacterPromptLayoutEnabled, expertCharacterPromptVariantsEnabled, setExpertCharacterPromptVariantsEnabled, expertCharacterPromptGenderIndicatorEnabled, setExpertCharacterPromptGenderIndicatorEnabled, expertMetadataAlwaysAddCharacters, setExpertMetadataAlwaysAddCharacters, characterPromptGenderIndicatorMode, setCharacterPromptGenderIndicatorMode, expertSceneCharacterVariantOverrideEnabled, setExpertSceneCharacterVariantOverrideEnabled, expertSceneCharacterCostumeOverrideEnabled, setExpertSceneCharacterCostumeOverrideEnabled, expertSceneCharacterRepeatEnabled, setExpertSceneCharacterRepeatEnabled, expertSceneCharacterAdditionsEnabled, setExpertSceneCharacterAdditionsEnabled, sceneCharacterAdditionMode, setSceneCharacterAdditionMode, expertSceneMultiCharacterEnabled, setExpertSceneMultiCharacterEnabled, sceneMultiCharacterGenderSelectionMode, setSceneMultiCharacterGenderSelectionMode, expertSceneExportNameEnabled, setExpertSceneExportNameEnabled, sceneExportNamePart, setSceneExportNamePart, expertSceneRandomCharactersEnabled, setExpertSceneRandomCharactersEnabled, expertExifDirectActionEnabled, setExpertExifDirectActionEnabled, expertExifManagerEnabled, setExpertExifManagerEnabled, expertExifQuickActionEnabled, setExpertExifQuickActionEnabled, expertExifAutoSaveEnabled, setExpertExifAutoSaveEnabled, exifAutoSaveName, setExifAutoSaveName, exifAutoSavePath, setExifAutoSavePath, exifOutputFormat, setExifOutputFormat, expertR2DirectUploadEnabled, setExpertR2DirectUploadEnabled, expertR2ExifRemovalEnabled, setExpertR2ExifRemovalEnabled, expertCloudR2Enabled, setExpertCloudR2Enabled, r2ViewMode, setR2ViewMode, r2AccountId, r2AccessKeyId, r2SecretAccessKey, r2Bucket, r2PublicBaseUrl, setR2Config } = useSettingsStore()
     const koTagHintEnabled = useSettingsStore(state => state.koTagHintEnabled)
     const blurModeFeatureEnabled = useSettingsStore(state => state.blurModeFeatureEnabled)
+    const generationDoneNotify = useSettingsStore(state => state.generationDoneNotify)
+    const generationDoneSound = useSettingsStore(state => state.generationDoneSound)
+    const setGenerationDoneAlerts = useSettingsStore(state => state.setGenerationDoneAlerts)
+    const characterAssetScenesEnabled = useSettingsStore(state => state.characterAssetScenesEnabled)
+    const setCharacterAssetScenesEnabled = useSettingsStore(state => state.setCharacterAssetScenesEnabled)
     const setBlurModeFeatureEnabled = useSettingsStore(state => state.setBlurModeFeatureEnabled)
     const koTranslateEnabled = useSettingsStore(state => state.koTranslateEnabled)
     const setKoTranslateEnabled = useSettingsStore(state => state.setKoTranslateEnabled)
@@ -839,6 +845,39 @@ export default function Settings() {
                                         </span>
                                     </span>
                                     <Switch checked={blurModeFeatureEnabled} onChange={event => setBlurModeFeatureEnabled(event.target.checked)} />
+                                </label>
+                                <label className="flex items-center justify-between gap-3 border-t border-border/30 pt-4 text-sm">
+                                    <span className="font-medium">
+                                        {t('settingsPage.alerts.notify', '생성이 끝나면 PC 알림')}
+                                        <span className="block text-xs font-normal text-muted-foreground">
+                                            {t('settingsPage.alerts.notifyHelp', '씬 모드의 예약이 모두 끝났을 때, 메인에서 여러 장을 뽑았거나 창을 보고 있지 않을 때 알려줍니다.')}
+                                        </span>
+                                    </span>
+                                    <Switch checked={generationDoneNotify} onChange={event => setGenerationDoneAlerts({ generationDoneNotify: event.target.checked })} />
+                                </label>
+                                <label className="flex items-center justify-between gap-3 text-sm">
+                                    <span className="font-medium">
+                                        {t('settingsPage.alerts.sound', '생성이 끝나면 소리')}
+                                        <span className="block text-xs font-normal text-muted-foreground">
+                                            {t('settingsPage.alerts.soundHelp', '짧은 알림음을 냅니다. 켜면 한 번 들려줘요.')}
+                                        </span>
+                                    </span>
+                                    <Switch
+                                        checked={generationDoneSound}
+                                        onChange={event => {
+                                            setGenerationDoneAlerts({ generationDoneSound: event.target.checked })
+                                            if (event.target.checked) playDoneSound()
+                                        }}
+                                    />
+                                </label>
+                                <label className="flex items-center justify-between gap-3 border-t border-border/30 pt-4 text-sm">
+                                    <span className="font-medium">
+                                        {t('settingsPage.characterAsset.title', '캐릭터 에셋 뽑기 사용')}
+                                        <span className="block text-xs font-normal text-muted-foreground">
+                                            {t('settingsPage.characterAsset.help', '캐릭터 창에 버튼이 생기고, 캐릭터씬은 그 캐릭터와 고른 레퍼런스로만 생성됩니다. 끄면 버튼이 사라지고 캐릭터씬도 보통 작품처럼 생성돼요.')}
+                                        </span>
+                                    </span>
+                                    <Switch checked={characterAssetScenesEnabled} onChange={event => setCharacterAssetScenesEnabled(event.target.checked)} />
                                 </label>
                             </div>
                         </section>
@@ -2082,7 +2121,7 @@ function ShortcutRow({ action, binding, allBindings, isEditing, recordedBinding,
                                 onClick={onStartEdit}
                                 className="px-3 py-1.5 rounded-md text-sm font-mono bg-muted hover:bg-muted/80 min-w-[100px] text-center"
                             >
-                                {displayBinding.label}
+                                {displayBinding.label || t('settingsPage.shortcuts.unset', '미지정')}
                             </button>
                             <Tip content={t('settingsPage.shortcuts.reset', '초기화')}>
                                 <Button size="sm" variant="ghost" onClick={onReset}>
