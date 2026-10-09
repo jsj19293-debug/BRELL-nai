@@ -19,6 +19,7 @@ import { bytesToImageDataUrl } from '@/lib/exif-stripper'
 import { processAndSaveExifImage } from '@/lib/exif-actions'
 import { useGenerationStore } from '@/stores/generation-store'
 import { InpaintingDialog } from '@/components/tools/InpaintingDialog'
+import { saveSeedFromImage } from '@/services/seed-vault-service'
 import { ImageQuickActionItems } from '@/components/image/ImageQuickActionItems'
 
 interface LibraryContextMenuProps {
@@ -185,6 +186,7 @@ export function LibraryContextMenu({ item, children, onRename, onAddRef, onLoadM
                     onInpaint={handleInpaint}
                     onI2I={handleI2I}
                     onDrawOver={handleDrawOver}
+                    onSaveSeed={async () => { try { await saveSeedFromImage(await getImageData(), item.path) } catch (e) { console.error('Failed to save seed:', e) } }}
                     onAddReference={onAddRef}
                     onLoadMetadata={onLoadMetadata}
                     onOpenFolder={handleOpenFolder}

@@ -80,7 +80,9 @@ import {
     ChevronDown,
     RefreshCw,
     Ratio,
+    Lock,
 } from 'lucide-react'
+import { SceneSeedLockDialog } from '@/components/scene/SceneSeedLockDialog'
 import { cn } from '@/lib/utils'
 import { useNearViewport } from '@/hooks/use-near-viewport'
 import { useSceneQueueCount, useSceneQueueHasItems } from '@/hooks/use-scene-queue'
@@ -1399,6 +1401,7 @@ const SceneCardItem = memo(function SceneCardItem({ scene, onClick, disabled = f
     const [isEditing, setIsEditing] = useState(false)
     const [editName, setEditName] = useState(scene.name)
     const [moveTargets, setMoveTargets] = useState<Array<{ id: string; name: string }>>([])
+    const [seedLockOpen, setSeedLockOpen] = useState(false)
 
     // Essential reactive state - only subscribe to what MUST trigger re-renders
     const activePresetId = useSceneStore(s => s.activePresetId)
@@ -1526,6 +1529,7 @@ const SceneCardItem = memo(function SceneCardItem({ scene, onClick, disabled = f
                         "group relative flex flex-col rounded-2xl overflow-hidden",
                         getThumbnailAspectClass(thumbnailLayout),
                         "bg-card border border-border/50 shadow-sm",
+                        scene.fixedSeed && "scene-seed-locked",
                         !isOverlay && "hover:shadow-lg hover:border-primary/30 transition-shadow",
                         isOverlay && "shadow-xl ring-2 ring-primary cursor-grabbing z-50",
                         disabled && "opacity-80 pointer-events-none",
@@ -1666,6 +1670,7 @@ const SceneCardItem = memo(function SceneCardItem({ scene, onClick, disabled = f
             <ContextMenuContent className="w-40">
                 <ContextMenuItem onClick={() => { setIsEditing(true); setEditName(scene.name) }}> <Pencil className="mr-2 h-4 w-4" /> {t('scene.rename')} </ContextMenuItem>
                 <ContextMenuItem onClick={() => onDuplicate()}> <Copy className="mr-2 h-4 w-4" /> {t('scene.duplicate')} </ContextMenuItem>
+                <ContextMenuItem data-scene-seed-lock-item onClick={() => setSeedLockOpen(true)}> <Lock className={cn("mr-2 h-4 w-4", scene.fixedSeed && "text-red-500")} /> {scene.fixedSeed ? t('sceneSeedLock.menuLocked', '시드 고정됨 ({{n}})', { n: scene.fixedSeed }) : t('sceneSeedLock.title', '시드값 고정')} </ContextMenuItem>
                 {moveTargets.length > 0 && (
                     <ContextMenuSub>
                         <ContextMenuSubTrigger><FolderInput className="mr-2 h-4 w-4" />{t('scene.moveToPreset')}</ContextMenuSubTrigger>
@@ -1681,6 +1686,15 @@ const SceneCardItem = memo(function SceneCardItem({ scene, onClick, disabled = f
                 <ContextMenuSeparator />
                 <ContextMenuItem className="text-destructive focus:text-destructive" onClick={() => onDelete()}> <Trash2 className="mr-2 h-4 w-4" /> {t('actions.delete')} </ContextMenuItem>
             </ContextMenuContent>
+            {seedLockOpen && (
+                <SceneSeedLockDialog
+                    open={seedLockOpen}
+                    onOpenChange={setSeedLockOpen}
+                    sceneName={scene.name}
+                    currentSeed={scene.fixedSeed}
+                    onApply={(seed: number | null) => { if (activePresetId) useSceneStore.getState().setSceneFixedSeed(activePresetId, scene.id, seed) }}
+                />
+            )}
         </ContextMenu>
     )
 })
@@ -1757,6 +1771,7 @@ const SortableSceneCard = memo(function SortableSceneCard(props: any) {
         prevProps.scene.images?.length === nextProps.scene.images?.length &&
         prevProps.scene.width === nextProps.scene.width &&
         prevProps.scene.height === nextProps.scene.height &&
+        prevProps.scene.fixedSeed === nextProps.scene.fixedSeed &&
         prevProps.showResolutionBadge === nextProps.showResolutionBadge &&
         prevProps.sortingDisabled === nextProps.sortingDisabled &&
         prevProps.disabled === nextProps.disabled

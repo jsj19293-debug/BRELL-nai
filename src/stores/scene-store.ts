@@ -48,6 +48,8 @@ export interface SceneCard {
     multiCharacterSlots?: SceneMultiCharacterSlot[]
     // The physical folder is independent from the display name after a scene is renamed.
     folderPath?: string
+    /** 씬별 시드 고정: 값이 있으면 이 씬은 항상 이 시드로 생성한다 (예약대형의 시드 설정이 있으면 그쪽이 우선) */
+    fixedSeed?: number
     createdAt: number
 }
 
@@ -215,6 +217,7 @@ interface SceneState {
     duplicateScene: (presetId: string, sceneId: string) => void
     renameScene: (presetId: string, sceneId: string, name: string) => Promise<void>
     updateScenePrompt: (presetId: string, sceneId: string, prompt: string) => void
+    setSceneFixedSeed: (presetId: string, sceneId: string, seed: number | null) => void
     updateSceneNegativePrompt: (presetId: string, sceneId: string, prompt: string) => void
     updateSceneSettings: (presetId: string, sceneId: string, settings: { width?: number, height?: number }) => void
     updateSceneMultiCharacterSlots: (presetId: string, sceneId: string, slots: SceneMultiCharacterSlot[]) => void
@@ -842,6 +845,18 @@ export const useSceneStore = create<SceneState>()(
                             ...preset,
                             scenes: preset.scenes.map((scene) =>
                                 scene.id === sceneId ? { ...scene, scenePrompt: prompt } : scene
+                            ),
+                        }
+                        : preset
+                ),
+            })),
+            setSceneFixedSeed: (presetId, sceneId, seed) => set((state) => ({
+                presets: state.presets.map((preset) =>
+                    preset.id === presetId
+                        ? {
+                            ...preset,
+                            scenes: preset.scenes.map((scene) =>
+                                scene.id === sceneId ? { ...scene, fixedSeed: seed && seed > 0 ? seed : undefined } : scene
                             ),
                         }
                         : preset

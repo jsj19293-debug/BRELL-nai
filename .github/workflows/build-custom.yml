@@ -46,6 +46,7 @@ jobs:
           npm run check:work-log
           npm run check:scene-reservation
           npm run check:storage-names
+          npm run check:seed-vault
           npm run check:shortcuts
           npm run check:installer-continuity
 

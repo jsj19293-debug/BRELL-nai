@@ -104,6 +104,26 @@ export function reservationSeed(asset: CharacterAssetInfo | undefined, pass: 'fi
     return 'random'
 }
 
+/**
+ * 실제로 쓸 시드를 정한다. 앞선 것이 이긴다:
+ *  1) I2I 싸이클 두 번째 장에 넘겨받은 시드
+ *  2) 예약대형에서 예약할 때 정한 시드 설정 (고정 값 또는 랜덤) — 씬에 고정한 시드를 무시한다
+ *  3) 씬에 고정한 시드 (씬 카드 우클릭 > 시드값 고정)
+ *  4) 메인의 시드 설정 (mainSeed)
+ */
+export function resolveSceneSeed(input: {
+    mainSeed: number
+    reservedSeed: number | 'random' | null
+    sceneFixedSeed?: number
+    secondPassSeed?: number
+}, random: () => number = randomSeed): number {
+    if ((input.secondPassSeed ?? 0) > 0) return input.secondPassSeed as number
+    if (input.reservedSeed === 'random') return random()
+    if (typeof input.reservedSeed === 'number') return input.reservedSeed
+    if ((input.sceneFixedSeed ?? 0) > 0) return input.sceneFixedSeed as number
+    return input.mainSeed
+}
+
 export function randomSeed(): number {
     return Math.floor(Math.random() * 4294967294) + 1
 }

@@ -193,3 +193,27 @@ html.blur-mode [data-no-blur] img {
     filter: none;
     clip-path: none;
 }
+
+/* Nightmare 2: 순검정 대신 은은한 남보라 그라데이션 배경 (다크 테마 전용, 고정 이미지라 부하 없음) */
+.dark .app-backdrop {
+  background:
+    radial-gradient(1100px 620px at 12% -8%, hsl(252 55% 22% / 0.55), transparent 62%),
+    radial-gradient(900px 560px at 96% 4%, hsl(222 60% 20% / 0.45), transparent 60%),
+    radial-gradient(1000px 700px at 60% 112%, hsl(275 45% 18% / 0.42), transparent 62%),
+    linear-gradient(160deg, hsl(236 30% 8%) 0%, hsl(240 26% 6%) 45%, hsl(258 28% 7%) 100%);
+}
+
+/* Anlas 차감 표시 */
+@keyframes anlas-delta-in {
+  0% { opacity: 0; transform: translateY(-6px); }
+  12% { opacity: 1; transform: translateY(0); }
+  85% { opacity: 1; }
+  100% { opacity: 0.55; }
+}
+.anlas-delta { animation: anlas-delta-in 8s ease-out both; }
+
+/* 시드가 고정된 씬 카드 */
+.scene-seed-locked {
+  border-color: rgb(239 68 68 / 0.9) !important;
+  box-shadow: 0 0 0 1px rgb(239 68 68 / 0.75), 0 0 14px rgb(239 68 68 / 0.25);
+}

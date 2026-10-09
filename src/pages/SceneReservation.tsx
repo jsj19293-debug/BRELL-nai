@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { convertFileSrc } from '@tauri-apps/api/core'
-import { CalendarClock, Check, FolderOpen, Loader2, Play, Square, Trash2 } from 'lucide-react'
+import { CalendarClock, Check, FolderOpen, ListPlus, ListX, Loader2, Minus, Play, Plus, Square, Trash2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
@@ -21,6 +21,15 @@ import { openFolder, resolveSceneBaseFolder } from '@/lib/rell-folders'
 import { pathKey } from '@/lib/scene-folder-sync'
 import { startReservationRun, stopReservationRun, useReservationRunner } from '@/services/scene-reservation-runner'
 import { join } from '@tauri-apps/api/path'
+import { readFile } from '@tauri-apps/plugin-fs'
+import { Switch } from '@/components/ui/switch'
+import { SceneImageContextMenu } from '@/components/scene/SceneImageContextMenu'
+import { MetadataDialog } from '@/components/metadata/MetadataDialog'
+import { ImageReferenceDialog } from '@/components/metadata/ImageReferenceDialog'
+import { InpaintingDialog } from '@/components/tools/InpaintingDialog'
+import { SeedVaultPicker, takeReservationSeedRequest } from '@/components/seed/SeedVaultDialog'
+import { bytesToImageDataUrl } from '@/lib/exif-stripper'
+import { useSceneQueueCount, useSceneQueueTotal } from '@/hooks/use-scene-queue'
 
 const rowClass = (checked: boolean) => cn(
     'flex w-full items-center gap-2 rounded-lg border px-3 py-2 text-left text-sm transition-colors',
@@ -45,6 +54,27 @@ function StepTitle({ step, children }: { step: number; children: React.ReactNode
             <span className="flex h-5 w-5 items-center justify-center rounded-full bg-primary/15 text-[11px] font-semibold text-primary">{step}</span>
             {children}
         </h3>
+    )
+}
+
+const EDIT_VIEW_KEY = 'nightmare2-reservation-edit-view'
+const readEditView = () => {
+    try { return localStorage.getItem(EDIT_VIEW_KEY) === '1' } catch { return false }
+}
+
+/** 편집 보기: 씬 하나의 예약 장수를 늘리고 줄이는 버튼 (씬 모드 카드의 + / - 와 같다) */
+function ReserveQueueControls({ presetId, sceneId, disabled }: { presetId: string; sceneId: string; disabled: boolean }) {
+    const queueCount = useSceneQueueCount(presetId, sceneId)
+    return (
+        <div className="flex items-center gap-1.5 px-2 pb-2" data-reserve-queue>
+            <Button variant="secondary" size="icon" className="h-7 w-7 rounded-lg" disabled={disabled || queueCount === 0} onClick={() => useSceneStore.getState().decrementQueue(presetId, sceneId)}>
+                <Minus className="h-3 w-3" />
+            </Button>
+            <span data-reserve-queue-count className={cn('flex-1 rounded-full py-0.5 text-center text-xs font-bold tabular-nums', queueCount > 0 ? 'bg-red-500 text-white' : 'bg-muted text-muted-foreground')}>{queueCount}</span>
+            <Button variant="secondary" size="icon" className="h-7 w-7 rounded-lg" disabled={disabled} onClick={() => useSceneStore.getState().incrementQueue(presetId, sceneId, 1)}>
+                <Plus className="h-3 w-3" />
+            </Button>
+        </div>
     )
 }
 
@@ -91,6 +121,29 @@ export default function SceneReservation() {
     const [selectedPresetId, setSelectedPresetId] = useState<string | null>(null)
     const [deleteId, setDeleteId] = useState<string | null>(null)
     const [preview, setPreview] = useState<string | null>(null)
+    const [editView, setEditView] = useState(readEditView)
+    const [metadataImage, setMetadataImage] = useState<string | undefined>()
+    const [referenceImage, setReferenceImage] = useState<string | null>(null)
+    const [inpaintImage, setInpaintImage] = useState<string | null>(null)
+    const deleteImage = useSceneStore(state => state.deleteImage)
+    const selectedQueueTotal = useSceneQueueTotal(selectedPresetId)
+
+    // 시드 보관함에서 "예약대형 고정 시드로"를 누르면 그 값을 받아 넣는다.
+    useEffect(() => {
+        const take = () => {
+            const seed = takeReservationSeedRequest()
+            if (seed) setSeedValue(clampSeed(seed))
+        }
+        take()
+        window.addEventListener('nightmare:reservation-seed', take)
+        return () => window.removeEventListener('nightmare:reservation-seed', take)
+    }, [])
+
+    const changeEditView = (value: boolean) => {
+        setEditView(value)
+        try { localStorage.setItem(EDIT_VIEW_KEY, value ? '1' : '0') } catch { /* 저장 못 해도 화면은 바뀐다 */ }
+    }
+    const loadImageDataUrl = async (url: string) => url.startsWith('data:') ? url : bytesToImageDataUrl(await readFile(url), url)
 
     const chosenCharacters = characters
         .map((character, index) => ({ id: character.id, name: assetCharacterName(character.name, index), referenceIds: referencesByCharacter[character.id] ?? [] }))
@@ -138,6 +191,29 @@ export default function SceneReservation() {
             console.error('Failed to start the reservation:', error)
             toast({ title: t('reservation.startFailed', '예약을 시작하지 못했어요'), description: String(error), variant: 'destructive' })
         }
+    }
+
+    // 편집 보기: 고른 묶음에서 아직 다 안 뽑힌 씬을 한 장씩 다시 예약한다.
+    const queueIncomplete = () => {
+        if (!selectedPreset) return
+        const expected = selectedPreset.characterAsset?.i2iCycle ? 2 : 1
+        const scenes = useSceneStore.getState()
+        let added = 0
+        for (const scene of selectedPreset.scenes) {
+            if (scene.images.length >= expected || scene.queueCount > 0) continue
+            scenes.setQueueCount(selectedPreset.id, scene.id, 1)
+            added += 1
+        }
+        toast({
+            title: added > 0
+                ? t('reservation.queuedIncomplete', '미완성 씬 {{n}}개를 예약했어요', { n: added })
+                : t('reservation.noIncomplete', '미완성 씬이 없습니다'),
+        })
+    }
+    // 편집 보기: 고른 묶음만 다시 생성한다. 순서(레퍼 → i2i)와 저장 폴더는 처음 예약한 설정을 그대로 따른다.
+    const runSelected = () => {
+        if (!selectedPreset) return
+        startReservationRun([selectedPreset.id])
     }
 
     const openReservationFolder = async (path?: string) => {
@@ -264,6 +340,7 @@ export default function SceneReservation() {
                             <div className="flex items-center gap-2">
                                 <span className="shrink-0 text-xs text-muted-foreground">{t('reservation.seedValue', '고정 시드 값')}</span>
                                 <Input type="number" min={1} value={seedValue} disabled={busy} onChange={event => setSeedValue(clampSeed(event.target.value))} className="h-8 flex-1" />
+                                <SeedVaultPicker disabled={busy} onPick={(seed: number) => setSeedValue(clampSeed(seed))} />
                                 <Button variant="outline" size="sm" className="h-8" disabled={busy} onClick={() => setSeedValue(randomSeed())}>{t('reservation.seedNew', '새 시드')}</Button>
                             </div>
                         )}
@@ -324,6 +401,10 @@ export default function SceneReservation() {
             <section className="flex min-w-0 flex-1 flex-col rounded-2xl border border-border/60 bg-card/40">
                 <div className="flex items-center justify-between gap-2 border-b border-border/40 px-4 py-2.5">
                     <h2 className="text-sm font-medium">{t('reservation.results', '예약 결과')}</h2>
+                    <div className="ml-auto flex items-center gap-2 text-xs text-muted-foreground" data-reserve-edit-toggle>
+                        <Switch checked={editView} onChange={event => changeEditView(event.target.checked)} aria-label={t('reservation.editView', '편집 보기')} />
+                        {t('reservation.editView', '편집 보기')}
+                    </div>
                     <Button variant="outline" size="sm" className="h-8" onClick={() => void openReservationFolder()}>
                         <FolderOpen className="mr-1.5 h-3.5 w-3.5" />
                         {t('reservation.openRoot', '예약대형 폴더 열기')}
@@ -395,6 +476,35 @@ export default function SceneReservation() {
                                     </Button>
                                 </Tip>
                             </div>
+                            {editView && (
+                                <div className="flex flex-wrap items-center gap-2 border-b border-border/40 bg-muted/20 px-4 py-2" data-reserve-edit-bar>
+                                    <Button variant="outline" size="sm" className="h-8" disabled={busy} onClick={queueIncomplete}>
+                                        <ListPlus className="mr-1.5 h-3.5 w-3.5" />
+                                        {t('reservation.queueIncomplete', '미완성 씬 예약')}
+                                    </Button>
+                                    <Button variant="outline" size="sm" className="h-8" disabled={busy || selectedQueueTotal === 0} onClick={() => useSceneStore.getState().clearAllQueue(selectedPreset.id)}>
+                                        <ListX className="mr-1.5 h-3.5 w-3.5" />
+                                        {t('reservation.clearQueue', '예약 비우기')}
+                                    </Button>
+                                    <span className="text-xs tabular-nums text-muted-foreground" data-reserve-edit-total>{t('reservation.queueTotal', '예약 {{n}}장', { n: selectedQueueTotal })}</span>
+                                    <span className="min-w-0 flex-1 truncate text-[11px] text-muted-foreground">
+                                        {selectedPreset.characterAsset?.i2iCycle
+                                            ? t('reservation.editHelpI2i', '씬마다 + 로 예약 → 레퍼를 먼저 뽑고 이어서 I2I를 뽑아 각 폴더에 저장합니다.')
+                                            : t('reservation.editHelp', '씬마다 + 로 예약한 만큼 다시 뽑아 같은 폴더에 저장합니다.')}
+                                    </span>
+                                    {runner.running ? (
+                                        <Button variant="destructive" size="sm" className="h-8" onClick={stopReservationRun}>
+                                            <Square className="mr-1.5 h-3.5 w-3.5" />
+                                            {t('reservation.stopShort', '중지')}
+                                        </Button>
+                                    ) : (
+                                        <Button size="sm" className="h-8" disabled={busy || selectedQueueTotal === 0} onClick={runSelected} data-reserve-edit-run>
+                                            <Play className="mr-1.5 h-3.5 w-3.5" />
+                                            {t('reservation.runSelected', '이 묶음 생성')}
+                                        </Button>
+                                    )}
+                                </div>
+                            )}
                             <div className="min-h-0 flex-1 overflow-y-auto p-3">
                                 <div className="grid gap-2" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(11rem, 1fr))' }}>
                                     {selectedPreset.scenes.map((scene, index) => {
@@ -409,20 +519,30 @@ export default function SceneReservation() {
                                                         </span>
                                                     )}
                                                     {images.map(image => (
-                                                        <button key={image.id} type="button" className="relative aspect-[2/3] overflow-hidden" onClick={() => setPreview(image.url)} title={image.url}>
-                                                            <img src={convertFileSrc(image.url)} alt="" loading="lazy" className="h-full w-full object-cover" />
-                                                            {i2iRoot && (
-                                                                <span className="absolute left-1 top-1 rounded bg-black/70 px-1 text-[9px] font-semibold text-white">
-                                                                    {isI2iImage(image.url) ? 'I2I' : t('reservation.tagReference', '레퍼')}
-                                                                </span>
-                                                            )}
-                                                        </button>
+                                                        <SceneImageContextMenu
+                                                            key={image.id}
+                                                            image={image}
+                                                            onDelete={() => deleteImage(selectedPreset.id, scene.id, image.id)}
+                                                            onAddRef={() => { void loadImageDataUrl(image.url).then(setReferenceImage).catch(error => console.error('Failed to load ref image', error)) }}
+                                                            onLoadMetadata={() => { void loadImageDataUrl(image.url).then(setMetadataImage).catch(error => console.error('Failed to load metadata image', error)) }}
+                                                            onInpaint={(base64: string) => setInpaintImage(base64)}
+                                                        >
+                                                            <button type="button" data-reserve-image className="relative aspect-[2/3] overflow-hidden" onClick={() => setPreview(image.url)} title={image.url}>
+                                                                <img src={convertFileSrc(image.url)} alt="" loading="lazy" className="h-full w-full object-cover" />
+                                                                {i2iRoot && (
+                                                                    <span className="absolute left-1 top-1 rounded bg-black/70 px-1 text-[9px] font-semibold text-white">
+                                                                        {isI2iImage(image.url) ? 'I2I' : t('reservation.tagReference', '레퍼')}
+                                                                    </span>
+                                                                )}
+                                                            </button>
+                                                        </SceneImageContextMenu>
                                                     ))}
                                                 </div>
                                                 <p className="truncate px-2 py-1 text-xs">
                                                     <span className="mr-1 tabular-nums text-muted-foreground">{index + 1}</span>
                                                     {scene.name}
                                                 </p>
+                                                {editView && <ReserveQueueControls presetId={selectedPreset.id} sceneId={scene.id} disabled={busy} />}
                                             </div>
                                         )
                                     })}
@@ -442,6 +562,21 @@ export default function SceneReservation() {
                     <img src={convertFileSrc(preview)} alt="" className="max-h-full max-w-full rounded-lg object-contain" />
                 </div>
             )}
+            <MetadataDialog
+                open={metadataImage !== undefined}
+                onOpenChange={(open: boolean) => { if (!open) setMetadataImage(undefined) }}
+                initialImage={metadataImage}
+            />
+            <ImageReferenceDialog
+                open={referenceImage !== null}
+                onOpenChange={(open: boolean) => { if (!open) setReferenceImage(null) }}
+                imageBase64={referenceImage}
+            />
+            <InpaintingDialog
+                open={inpaintImage !== null}
+                onOpenChange={(open: boolean) => { if (!open) setInpaintImage(null) }}
+                sourceImage={inpaintImage}
+            />
             <ConfirmDialog
                 open={deleteId !== null}
                 onOpenChange={open => { if (!open) setDeleteId(null) }}

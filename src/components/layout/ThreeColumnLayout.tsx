@@ -9,6 +9,8 @@ import { AnimatedNavBar } from './AnimatedNavBar'
 import { CustomTitleBar } from './CustomTitleBar'
 import { RemoteControl } from '@/components/RemoteControl'
 import { WorkLogButton } from '@/components/account/WorkLogDialog'
+import { AnlasDelta } from '@/components/account/AnlasDelta'
+import { SeedVaultButton } from '@/components/seed/SeedVaultDialog'
 import { PresetDropdown } from '@/components/preset/PresetDropdown'
 import { FragmentPromptDialog } from '@/components/fragments/FragmentPromptDialog'
 import { useAuthStore } from '@/stores/auth-store'
@@ -394,10 +396,10 @@ export function ThreeColumnLayout({ children }: ThreeColumnLayoutProps) {
             </button>
         </Tip>
     )
-    const accountControls = <div className="flex items-center gap-1">{accountMenu}{accountSettings}<RemoteControl /><WorkLogButton />{blurToggle}</div>
+    const accountControls = <div className="flex items-center gap-1">{accountMenu}{accountSettings}<RemoteControl /><WorkLogButton /><SeedVaultButton />{blurToggle}</div>
 
     return (
-        <div className="flex flex-col h-screen bg-background overflow-hidden">
+        <div className="app-backdrop flex flex-col h-screen bg-background overflow-hidden">
             {/* Custom Title Bar - Only show on Windows (Mac uses native decorations) */}
             {!isMac && <CustomTitleBar leading={accountControls} navigation={<AnimatedNavBar items={navItems} />} />}
 
@@ -450,6 +452,7 @@ export function ThreeColumnLayout({ children }: ThreeColumnLayoutProps) {
                                         <span className="text-sm font-semibold text-amber-500">
                                             {formatAnlas(anlas.total)}
                                         </span>
+                                        <AnlasDelta total={anlas.total} accountKey={token || ''} />
                                     </div>
                                 </Tip>
                             </div>

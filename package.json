@@ -27,6 +27,7 @@
     "check:work-log": "node --experimental-strip-types scripts/check-work-log.mjs",
     "check:scene-reservation": "node --experimental-strip-types scripts/check-scene-reservation.mjs",
     "check:storage-names": "node --experimental-strip-types scripts/check-storage-names.mjs",
+    "check:seed-vault": "node --experimental-strip-types scripts/check-seed-vault.mjs",
     "check:installer-continuity": "node scripts/check-installer-continuity.mjs",
     "check:model-capabilities": "node --experimental-strip-types scripts/check-model-capabilities.mjs",
     "check:tokenizer": "node scripts/check-tokenizer.mjs",

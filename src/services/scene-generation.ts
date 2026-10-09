@@ -12,7 +12,7 @@ import { buildGenerationRequest } from '@/lib/generation-request'
 import { getModelCapabilities } from '@/lib/model-capabilities'
 import { useCharacterStore } from '@/stores/character-store'
 import { assetBehaviourEnabled, resolveCharacterAssetOverride } from '@/lib/character-asset-presets'
-import { randomSeed, reservationSeed } from '@/lib/scene-reservation'
+import { reservationSeed, resolveSceneSeed } from '@/lib/scene-reservation'
 import { logGeneratedImage } from '@/services/work-log-service'
 import { getRandomCharacterCandidates, pickRandomCharacters } from '@/lib/random-character-selection'
 import { SCENE_IMAGE_GENERATED_EVENT } from '@/lib/scene-review-generation'
@@ -222,9 +222,13 @@ export async function generateSceneImage(options: {
     }
     // 예약대형: 예약할 때 정한 시드 방식(고정 값 또는 씬마다 랜덤)이 메인의 시드 설정보다 앞선다.
     const reservedSeed = assetBehaviour ? reservationSeed(assetPreset?.characterAsset) : null
-    if (reservedSeed === 'random') finalSeed = randomSeed()
-    else if (typeof reservedSeed === 'number') finalSeed = reservedSeed
-    if (secondPass && secondPass.seed > 0) finalSeed = secondPass.seed
+    // 그다음이 씬에 고정한 시드(씬 카드 우클릭 > 시드값 고정), 마지막이 메인의 시드 설정이다.
+    finalSeed = resolveSceneSeed({
+        mainSeed: finalSeed,
+        reservedSeed,
+        sceneFixedSeed: scene.fixedSeed,
+        secondPassSeed: secondPass?.seed,
+    })
 
     // Helper function to round to nearest multiple of 64 (NovelAI requirement)
     const roundTo64 = (value: number): number => Math.round(value / 64) * 64

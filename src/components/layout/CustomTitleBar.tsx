@@ -93,7 +93,7 @@ export function CustomTitleBar({ navigation, leading }: { navigation?: ReactNode
     }
 
     return (
-        <div className="relative h-12 flex items-center justify-between bg-background select-none shrink-0 border-b border-border/40">
+        <div className="relative h-12 flex items-center justify-between bg-transparent select-none shrink-0 border-b border-border/40">
             <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center">
                 <div className="pointer-events-auto">{navigation}</div>
             </div>

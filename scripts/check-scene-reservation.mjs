@@ -1,7 +1,7 @@
 // 예약(대형) 씬 생성 계획 검사.
 import assert from 'node:assert/strict'
 import {
-    clampSceneLimit, clampSeed, estimateReservation, hasQueuedScenes, planReservation, randomSeed, reservationI2iFolder, reservationSeed,
+    clampSceneLimit, clampSeed, estimateReservation, hasQueuedScenes, planReservation, randomSeed, reservationI2iFolder, reservationSeed, resolveSceneSeed,
 } from '../src/lib/scene-reservation.ts'
 import { characterAssetProgress, presetWantsI2iCycle, resolveCharacterAssetOverride } from '../src/lib/character-asset-presets.ts'
 
@@ -134,6 +134,18 @@ const request = {
     // 고른 것이 없으면 아무것도 만들지 않는다
     assert.deepEqual(planReservation(presets, { ...request, characters: [] }, makeId, 1).jobs, [])
     assert.deepEqual(planReservation(presets, { ...request, presetIds: ['nope'] }, makeId, 1).jobs, [])
+}
+
+{
+    // 시드 우선순위: I2I 두 번째 장 > 예약대형 설정 > 씬 고정 시드 > 메인 설정
+    const fixedRandom = () => 777
+    assert.equal(resolveSceneSeed({ mainSeed: 5, reservedSeed: null }), 5)
+    assert.equal(resolveSceneSeed({ mainSeed: 5, reservedSeed: null, sceneFixedSeed: 42 }), 42)
+    assert.equal(resolveSceneSeed({ mainSeed: 5, reservedSeed: 99, sceneFixedSeed: 42 }), 99)
+    assert.equal(resolveSceneSeed({ mainSeed: 5, reservedSeed: 'random', sceneFixedSeed: 42 }, fixedRandom), 777)
+    assert.equal(resolveSceneSeed({ mainSeed: 5, reservedSeed: 99, sceneFixedSeed: 42, secondPassSeed: 1234 }), 1234)
+    assert.equal(resolveSceneSeed({ mainSeed: 5, reservedSeed: null, sceneFixedSeed: 0 }), 5)
+    assert.equal(resolveSceneSeed({ mainSeed: 5, reservedSeed: null, sceneFixedSeed: 42, secondPassSeed: 0 }), 42)
 }
 
 console.log('Scene reservation checks passed.')
