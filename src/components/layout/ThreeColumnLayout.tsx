@@ -112,6 +112,7 @@ export function ThreeColumnLayout({ children }: ThreeColumnLayoutProps) {
     const rightPanelRef = useRef<HTMLElement>(null)
     const resizeCleanupRef = useRef<(() => void) | null>(null)
     const expertCloudR2Enabled = useSettingsStore(state => state.expertCloudR2Enabled)
+    const blurModeFeatureEnabled = useSettingsStore(state => state.blurModeFeatureEnabled)
     const blurModeEnabled = useSettingsStore(state => state.blurModeEnabled)
     const setBlurModeEnabled = useSettingsStore(state => state.setBlurModeEnabled)
     const expertSceneRandomCharactersEnabled = useSettingsStore(state => state.expertSceneRandomCharactersEnabled)
@@ -366,7 +367,8 @@ export function ThreeColumnLayout({ children }: ThreeColumnLayoutProps) {
             </PopoverContent>
         </Popover>
     )
-    const blurToggle = (
+    // 설정에서 블러 모드 기능을 켠 경우에만 상단에 토글이 보인다.
+    const blurToggle = blurModeFeatureEnabled && (
         <Tip content={blurModeEnabled
             ? t('layout.blurModeOn', '블러 모드 켜짐 · 마우스를 올린 이미지만 보여요 (클릭해서 끄기)')
             : t('layout.blurModeOff', '블러 모드 · 마우스를 올리기 전에는 이미지를 흐리게')}>

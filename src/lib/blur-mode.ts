@@ -54,6 +54,8 @@ export function installBlurMode(): void {
         document.documentElement.classList.toggle(BLUR_MODE_CLASS, enabled)
         schedule()
     }
-    apply(useSettingsStore.getState().blurModeEnabled)
-    useSettingsStore.subscribe(state => apply(state.blurModeEnabled))
+    const active = (state: { blurModeFeatureEnabled: boolean; blurModeEnabled: boolean }) =>
+        state.blurModeFeatureEnabled && state.blurModeEnabled
+    apply(active(useSettingsStore.getState()))
+    useSettingsStore.subscribe(state => apply(active(state)))
 }

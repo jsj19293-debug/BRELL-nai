@@ -61,6 +61,8 @@ interface SettingsState {
     koTagHintEnabled: boolean
     /** 블러 모드: 마우스를 올리기 전에는 이미지를 흐리게 보여준다 */
     blurModeEnabled: boolean
+    /** 블러 모드 기능을 쓸지. 켜야 상단에 블러 토글 버튼이 생긴다 (끄면 원래 NAIS와 같다) */
+    blurModeFeatureEnabled: boolean
     /** 씬 모드 WebP 내보내기에서 마지막으로 쓴 설정 */
     sceneWebpExport: SceneWebpExportSettings
     /** 프롬프트 칸에 한글 문구를 치면 영어 번역을 보여준다 (번역 서비스로 그 문구를 보낸다) */
@@ -149,6 +151,7 @@ interface SettingsState {
     acknowledgeAnnouncement: (id: string) => void
     setKoTagHintEnabled: (enabled: boolean) => void
     setBlurModeEnabled: (enabled: boolean) => void
+    setBlurModeFeatureEnabled: (enabled: boolean) => void
     setSceneWebpExport: (config: Partial<SceneWebpExportSettings>) => void
     setKoTranslateEnabled: (enabled: boolean) => void
     setSceneRefI2iCycle: (config: Partial<Pick<SettingsState, 'sceneRefI2iCycleEnabled' | 'sceneRefI2iStrength' | 'sceneRefI2iNoise' | 'sceneRefI2iDisableVibes'>>) => void
@@ -212,6 +215,7 @@ export const useSettingsStore = create<SettingsState>()(
             acknowledgedAnnouncementId: '',
             koTagHintEnabled: true,
             blurModeEnabled: false,
+            blurModeFeatureEnabled: false,
             sceneWebpExport: { ...DEFAULT_SCENE_WEBP_EXPORT },
             koTranslateEnabled: true,
             sceneRefI2iCycleEnabled: false,
@@ -304,6 +308,8 @@ export const useSettingsStore = create<SettingsState>()(
             acknowledgeAnnouncement: (acknowledgedAnnouncementId) => set({ acknowledgedAnnouncementId }),
             setKoTagHintEnabled: (koTagHintEnabled) => set({ koTagHintEnabled }),
             setBlurModeEnabled: (blurModeEnabled) => set({ blurModeEnabled }),
+            // 기능을 끄면 블러도 같이 풀고, 켜면 바로 블러가 걸린 상태로 시작한다.
+            setBlurModeFeatureEnabled: (enabled) => set({ blurModeFeatureEnabled: enabled, blurModeEnabled: enabled }),
             setSceneWebpExport: (config) => set(state => {
                 const next = { ...DEFAULT_SCENE_WEBP_EXPORT, ...state.sceneWebpExport, ...config }
                 return {

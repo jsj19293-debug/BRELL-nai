@@ -101,6 +101,8 @@ export default function Settings() {
     const { token, tokens, isVerified, anlas, imageGenerationUsage, subscription, isLoading, verifyAndSave, removeToken } = useAuthStore()
     const { savePath, autoSave, setSavePath, setAutoSave, promptFontSize, setPromptFontSize, useStreaming, setUseStreaming, generationDelay, setGenerationDelay, useAbsolutePath, libraryPath, useAbsoluteLibraryPath, setLibraryPath, imageFormat, setImageFormat, promptWhitespaceMode, setPromptWhitespaceMode, removeEmptyPromptSeparators, setRemoveEmptyPromptSeparators, insertBlankLinesBetweenPromptParts, setInsertBlankLinesBetweenPromptParts, expertCharacterPromptFolderBrowserEnabled, setExpertCharacterPromptFolderBrowserEnabled, expertLibraryFolderBrowserEnabled, setExpertLibraryFolderBrowserEnabled, expertCharacterPromptLayoutEnabled, setExpertCharacterPromptLayoutEnabled, expertCharacterPromptVariantsEnabled, setExpertCharacterPromptVariantsEnabled, expertCharacterPromptGenderIndicatorEnabled, setExpertCharacterPromptGenderIndicatorEnabled, expertMetadataAlwaysAddCharacters, setExpertMetadataAlwaysAddCharacters, characterPromptGenderIndicatorMode, setCharacterPromptGenderIndicatorMode, expertSceneCharacterVariantOverrideEnabled, setExpertSceneCharacterVariantOverrideEnabled, expertSceneCharacterCostumeOverrideEnabled, setExpertSceneCharacterCostumeOverrideEnabled, expertSceneCharacterRepeatEnabled, setExpertSceneCharacterRepeatEnabled, expertSceneCharacterAdditionsEnabled, setExpertSceneCharacterAdditionsEnabled, sceneCharacterAdditionMode, setSceneCharacterAdditionMode, expertSceneMultiCharacterEnabled, setExpertSceneMultiCharacterEnabled, sceneMultiCharacterGenderSelectionMode, setSceneMultiCharacterGenderSelectionMode, expertSceneExportNameEnabled, setExpertSceneExportNameEnabled, sceneExportNamePart, setSceneExportNamePart, expertSceneRandomCharactersEnabled, setExpertSceneRandomCharactersEnabled, expertExifDirectActionEnabled, setExpertExifDirectActionEnabled, expertExifManagerEnabled, setExpertExifManagerEnabled, expertExifQuickActionEnabled, setExpertExifQuickActionEnabled, expertExifAutoSaveEnabled, setExpertExifAutoSaveEnabled, exifAutoSaveName, setExifAutoSaveName, exifAutoSavePath, setExifAutoSavePath, exifOutputFormat, setExifOutputFormat, expertR2DirectUploadEnabled, setExpertR2DirectUploadEnabled, expertR2ExifRemovalEnabled, setExpertR2ExifRemovalEnabled, expertCloudR2Enabled, setExpertCloudR2Enabled, r2ViewMode, setR2ViewMode, r2AccountId, r2AccessKeyId, r2SecretAccessKey, r2Bucket, r2PublicBaseUrl, setR2Config } = useSettingsStore()
     const koTagHintEnabled = useSettingsStore(state => state.koTagHintEnabled)
+    const blurModeFeatureEnabled = useSettingsStore(state => state.blurModeFeatureEnabled)
+    const setBlurModeFeatureEnabled = useSettingsStore(state => state.setBlurModeFeatureEnabled)
     const koTranslateEnabled = useSettingsStore(state => state.koTranslateEnabled)
     const setKoTranslateEnabled = useSettingsStore(state => state.setKoTranslateEnabled)
     const setKoTagHintEnabled = useSettingsStore(state => state.setKoTagHintEnabled)
@@ -829,6 +831,15 @@ export default function Settings() {
                                         {t('settingsPage.theme.fontSizeHelp', 'Adjust the font size of the prompt input areas.')}
                                     </p>
                                 </div>
+                                <label className="flex items-center justify-between gap-3 border-t border-border/30 pt-4 text-sm">
+                                    <span className="font-medium">
+                                        {t('settingsPage.theme.blurMode', '블러 모드 사용')}
+                                        <span className="block text-xs font-normal text-muted-foreground">
+                                            {t('settingsPage.theme.blurModeHelp', '켜면 상단에 눈 모양 버튼이 생기고, 그 버튼으로 블러를 켰다 껐다 할 수 있어요. 블러가 켜져 있으면 마우스를 올린 이미지만 보입니다.')}
+                                        </span>
+                                    </span>
+                                    <Switch checked={blurModeFeatureEnabled} onChange={event => setBlurModeFeatureEnabled(event.target.checked)} />
+                                </label>
                             </div>
                         </section>
                     )}
