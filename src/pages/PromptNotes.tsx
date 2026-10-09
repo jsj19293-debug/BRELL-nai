@@ -1,8 +1,10 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import {
-    ArrowDown, ArrowUp, BookOpen, Check, Copy, Globe2, Languages, Loader2, NotebookPen, Pencil, Plus, Search, StickyNote, Trash2,
+    ArrowDown, ArrowUp, BookOpen, Check, Copy, FileText, Globe2, Languages, Loader2, NotebookPen, Pencil, Plus, Search, StickyNote, Trash2, Upload,
 } from 'lucide-react'
+import { open as openDialog, save } from '@tauri-apps/plugin-dialog'
+import { readTextFile, writeTextFile } from '@tauri-apps/plugin-fs'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
@@ -16,7 +18,7 @@ import { useSettingsStore } from '@/stores/settings-store'
 import {
     LORE_CONTENT_MAX_CHARS, LORE_KEYWORDS_MAX_CHARS, LORE_MAX_ENTRIES, LORE_TITLE_MAX_CHARS, MEMO_MAX_CHARS, MEMO_MAX_COUNT,
     MEMO_TITLE_MAX_CHARS, PROJECT_MAX_COUNT, PROJECT_NAME_MAX_CHARS, WORLD_MAX_CHARS,
-    clampChars, countChars, filterLore, formatLoreEntry, formatProject, parseKeywords, totalLoreChars,
+    clampChars, countChars, filterLore, formatLoreEntry, formatLoreTxt, formatProject, loreTxtFileName, parseKeywords, parseLoreTxt, totalLoreChars,
     type PromptProject,
 } from '@/lib/prompt-notes'
 import {
@@ -96,151 +98,207 @@ function WorldTab({ project, onTranslate }: { project: PromptProject; onTranslat
 function LoreTab({ project, onTranslate }: { project: PromptProject; onTranslate: (text: string) => void }) {
     const { t } = useTranslation()
     const addLore = usePromptNotesStore(state => state.addLore)
+    const importLore = usePromptNotesStore(state => state.importLore)
     const updateLore = usePromptNotesStore(state => state.updateLore)
     const deleteLore = usePromptNotesStore(state => state.deleteLore)
     const moveLore = usePromptNotesStore(state => state.moveLore)
-    const [selectedId, setSelectedId] = useState<string | null>(project.lore[0]?.id ?? null)
     const [query, setQuery] = useState('')
     const [deleteId, setDeleteId] = useState<string | null>(null)
+    const [scrollToId, setScrollToId] = useState<string | null>(null)
 
     const visible = useMemo(() => filterLore(project.lore, query), [project.lore, query])
-    const selected = project.lore.find(entry => entry.id === selectedId) ?? null
     const full = project.lore.length >= LORE_MAX_ENTRIES
+    const numberOf = useMemo(() => new Map(project.lore.map((entry, index) => [entry.id, index + 1])), [project.lore])
 
-    // 작품을 바꾸거나 고른 항목이 지워지면 첫 항목을 고른다.
+    // 새로 만든 항목이 보이도록 내려간다.
     useEffect(() => {
-        if (!project.lore.some(entry => entry.id === selectedId)) setSelectedId(project.lore[0]?.id ?? null)
-    }, [project.id, project.lore, selectedId])
+        if (!scrollToId) return
+        document.getElementById(`lore-${scrollToId}`)?.scrollIntoView({ block: 'center', behavior: 'smooth' })
+        setScrollToId(null)
+    }, [scrollToId, project.lore])
 
     const handleAdd = () => {
         const id = addLore(project.id)
         if (id) {
             setQuery('')
-            setSelectedId(id)
+            setScrollToId(id)
+        }
+    }
+
+    const handleExportTxt = async () => {
+        try {
+            const path = await save({ defaultPath: loreTxtFileName(project.name), filters: [{ name: 'Text', extensions: ['txt'] }] })
+            if (!path) return
+            // 예전 메모장에서도 줄이 제대로 보이도록 윈도우 줄바꿈(CRLF)으로 저장한다.
+            await writeTextFile(path, formatLoreTxt(project.lore).replace(/\n/g, '\r\n'))
+            toast({ title: t('notes.lore.exported', '로어북 {{n}}개를 txt로 저장했어요', { n: project.lore.length }), description: path, variant: 'success' })
+        } catch (error) {
+            console.error('Failed to export lorebook:', error)
+            toast({ title: t('notes.lore.exportFailed', 'txt로 저장하지 못했어요'), description: String(error), variant: 'destructive' })
+        }
+    }
+
+    const handleImportTxt = async () => {
+        try {
+            const path = await openDialog({ multiple: false, filters: [{ name: 'Text', extensions: ['txt', 'md'] }] })
+            if (!path || typeof path !== 'string') return
+            const parsed = parseLoreTxt(await readTextFile(path))
+            if (parsed.entries.length === 0) {
+                toast({ title: t('notes.lore.importEmpty', '가져올 항목을 찾지 못했어요'), description: t('notes.lore.importEmptyHelp', '"## 01 제목" 줄로 시작하는 양식이어야 합니다.'), variant: 'destructive' })
+                return
+            }
+            const added = importLore(project.id, parsed.entries)
+            const skipped = parsed.entries.length - added
+            toast({
+                title: t('notes.lore.imported', '로어북 {{n}}개를 가져왔어요', { n: added }),
+                description: [
+                    skipped > 0 ? t('notes.lore.importSkipped', '{{n}}개는 150개 한도 때문에 넣지 못했어요', { n: skipped }) : '',
+                    parsed.truncated > 0 ? t('notes.lore.importTruncated', '{{n}}개는 글자 수 한도에 맞춰 잘렸어요', { n: parsed.truncated }) : '',
+                ].filter(Boolean).join(' · ') || undefined,
+                variant: added > 0 ? 'success' : 'destructive',
+            })
+        } catch (error) {
+            console.error('Failed to import lorebook:', error)
+            toast({ title: t('notes.lore.importFailed', 'txt를 읽지 못했어요'), description: String(error), variant: 'destructive' })
         }
     }
 
     return (
-        <div className="flex min-h-0 flex-1">
-            <div className="flex w-72 shrink-0 flex-col border-r border-border/40">
-                <div className="flex items-center gap-2 p-3">
-                    <div className="relative min-w-0 flex-1">
-                        <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
-                        <Input value={query} onChange={event => setQuery(event.target.value)} placeholder={t('notes.lore.search', '제목 · 키워드 · 내용 검색')} className="h-8 pl-8 text-xs" />
-                    </div>
-                    <Tip content={full ? t('notes.lore.full', '로어북은 {{n}}개까지 만들 수 있어요', { n: LORE_MAX_ENTRIES }) : t('notes.lore.add', '항목 추가')}>
-                        <Button size="icon" className="h-8 w-8 shrink-0" onClick={handleAdd} disabled={full} aria-label={t('notes.lore.add', '항목 추가')}>
-                            <Plus className="h-4 w-4" />
-                        </Button>
-                    </Tip>
+        <div className="flex min-h-0 flex-1 flex-col">
+            <div className="flex flex-wrap items-center gap-2 border-b border-border/40 px-4 py-2.5">
+                <div className="relative w-64 min-w-0">
+                    <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+                    <Input value={query} onChange={event => setQuery(event.target.value)} placeholder={t('notes.lore.search', '제목 · 키워드 · 내용 검색')} className="h-8 pl-8 text-xs" />
                 </div>
-                <p className="px-3 pb-2 text-[11px] text-muted-foreground">
+                <span className="text-[11px] text-muted-foreground">
                     <span className={cn(full && 'font-semibold text-destructive')}>{project.lore.length} / {LORE_MAX_ENTRIES}</span>
                     {' · '}
                     {t('notes.lore.total', '내용 합계 {{n}}자', { n: totalLoreChars(project.lore).toLocaleString() })}
-                </p>
-                <ul className="min-h-0 flex-1 overflow-y-auto px-2 pb-2">
-                    {visible.map(entry => {
-                        const keywords = parseKeywords(entry.keywords)
-                        return (
-                            <li key={entry.id}>
-                                <button
-                                    type="button"
-                                    onClick={() => setSelectedId(entry.id)}
-                                    className={cn(
-                                        'mb-1 w-full rounded-lg px-3 py-2 text-left transition-colors',
-                                        entry.id === selectedId ? 'bg-primary/15 text-foreground' : 'hover:bg-muted/50',
-                                    )}
-                                >
-                                    <span className="flex items-center justify-between gap-2">
-                                        <span className="truncate text-sm font-medium">{entry.title.trim() || t('notes.untitled', '제목 없음')}</span>
-                                        <span className="shrink-0 text-[10px] tabular-nums text-muted-foreground">{countChars(entry.content)}</span>
-                                    </span>
-                                    <span className="block truncate text-[11px] text-muted-foreground">
-                                        {keywords.length ? keywords.join(' · ') : t('notes.lore.noKeywords', '키워드 없음')}
-                                    </span>
-                                </button>
-                            </li>
-                        )
-                    })}
-                    {visible.length === 0 && (
-                        <li className="px-3 py-8 text-center text-xs text-muted-foreground">
-                            {project.lore.length === 0
-                                ? t('notes.lore.empty', '+ 버튼으로 첫 항목을 만들어 보세요.')
-                                : t('notes.lore.noMatch', '검색 결과가 없습니다.')}
-                        </li>
-                    )}
-                </ul>
+                </span>
+                <div className="ml-auto flex items-center gap-2">
+                    <Tip content={t('notes.lore.importTip', '"## 01 제목" 양식의 txt를 읽어 항목으로 추가합니다')}>
+                        <Button variant="outline" size="sm" className="h-8" onClick={() => void handleImportTxt()} disabled={full}>
+                            <Upload className="mr-1.5 h-3.5 w-3.5" />
+                            {t('notes.lore.import', 'txt 가져오기')}
+                        </Button>
+                    </Tip>
+                    <Tip content={t('notes.lore.exportTip', '제목과 내용을 "## 01 제목" 양식의 txt(메모장)로 저장합니다. 키워드는 넣지 않아요.')}>
+                        <Button variant="outline" size="sm" className="h-8" onClick={() => void handleExportTxt()} disabled={project.lore.length === 0}>
+                            <FileText className="mr-1.5 h-3.5 w-3.5" />
+                            {t('notes.lore.export', 'txt로 저장')}
+                        </Button>
+                    </Tip>
+                    <CopyButton text={formatLoreTxt(project.lore)} label={t('notes.lore.copyAll', '양식 복사')} done={t('notes.lore.copiedAll', '로어북 전체를 양식대로 복사했어요')} />
+                    <Tip content={full ? t('notes.lore.full', '로어북은 {{n}}개까지 만들 수 있어요', { n: LORE_MAX_ENTRIES }) : t('notes.lore.add', '항목 추가')}>
+                        <Button size="sm" className="h-8" onClick={handleAdd} disabled={full} aria-label={t('notes.lore.add', '항목 추가')}>
+                            <Plus className="mr-1 h-4 w-4" />
+                            {t('notes.lore.addShort', '추가')}
+                        </Button>
+                    </Tip>
+                </div>
             </div>
 
-            {selected ? (
-                <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-3 overflow-y-auto p-4">
-                    <div className="flex items-center gap-2">
-                        <Input
-                            value={selected.title}
-                            onChange={event => updateLore(project.id, selected.id, { title: clampChars(event.target.value, LORE_TITLE_MAX_CHARS) })}
-                            placeholder={t('notes.lore.title', '제목')}
-                            className="h-9 flex-1 font-medium"
-                        />
-                        <Tip content={t('notes.moveUp', '위로')}>
-                            <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => moveLore(project.id, selected.id, -1)} disabled={project.lore[0]?.id === selected.id}>
-                                <ArrowUp className="h-4 w-4" />
-                            </Button>
-                        </Tip>
-                        <Tip content={t('notes.moveDown', '아래로')}>
-                            <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => moveLore(project.id, selected.id, 1)} disabled={project.lore[project.lore.length - 1]?.id === selected.id}>
-                                <ArrowDown className="h-4 w-4" />
-                            </Button>
-                        </Tip>
-                        <Tip content={t('notes.delete', '삭제')}>
-                            <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive hover:bg-destructive/10 hover:text-destructive" onClick={() => setDeleteId(selected.id)}>
-                                <Trash2 className="h-4 w-4" />
-                            </Button>
-                        </Tip>
-                    </div>
-                    <div className="grid gap-1.5">
-                        <div className="flex items-center justify-between">
-                            <label className="text-xs font-medium text-muted-foreground">{t('notes.lore.content', '내용')}</label>
-                            <CharCounter count={countChars(selected.content)} max={LORE_CONTENT_MAX_CHARS} />
-                        </div>
-                        <Textarea
-                            value={selected.content}
-                            onChange={event => updateLore(project.id, selected.id, { content: clampChars(event.target.value, LORE_CONTENT_MAX_CHARS) })}
-                            placeholder={t('notes.lore.contentPlaceholder', '이 항목의 설정을 적어 보세요 (최대 500자)')}
-                            className="h-56 resize-none text-sm leading-relaxed"
-                            spellCheck={false}
-                        />
-                    </div>
-                    <div className="grid gap-1.5">
-                        <label className="text-xs font-medium text-muted-foreground">{t('notes.lore.keywords', '키워드 (쉼표로 구분)')}</label>
-                        <Input
-                            value={selected.keywords}
-                            onChange={event => updateLore(project.id, selected.id, { keywords: clampChars(event.target.value, LORE_KEYWORDS_MAX_CHARS) })}
-                            placeholder={t('notes.lore.keywordsPlaceholder', '예: 엘프, 숲의 왕국, 세계수')}
-                            className="h-9"
-                        />
-                        {parseKeywords(selected.keywords).length > 0 && (
-                            <div className="flex flex-wrap gap-1">
-                                {parseKeywords(selected.keywords).map(keyword => (
-                                    <span key={keyword} className="rounded-full bg-muted px-2 py-0.5 text-[11px] text-muted-foreground">{keyword}</span>
-                                ))}
+            {/* 모든 항목을 펼친 채로 쌓아 보여준다 */}
+            <div className="min-h-0 flex-1 space-y-3 overflow-y-auto p-4">
+                {visible.map(entry => {
+                    const number = numberOf.get(entry.id) ?? 0
+                    const keywords = parseKeywords(entry.keywords)
+                    return (
+                        <article key={entry.id} id={`lore-${entry.id}`} data-lore-card className="rounded-xl border border-border/60 bg-background/40 p-3">
+                            <div className="flex items-center gap-2">
+                                <span className="flex h-9 w-10 shrink-0 items-center justify-center rounded-lg bg-muted text-xs font-semibold tabular-nums text-muted-foreground">
+                                    {String(number).padStart(2, '0')}
+                                </span>
+                                <div className="relative min-w-0 flex-1">
+                                    <Input
+                                        value={entry.title}
+                                        onChange={event => updateLore(project.id, entry.id, { title: clampChars(event.target.value, LORE_TITLE_MAX_CHARS) })}
+                                        placeholder={t('notes.lore.title', '제목')}
+                                        className="h-9 pr-16 font-medium"
+                                    />
+                                    <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-[11px] tabular-nums text-muted-foreground">
+                                        {countChars(entry.title)}/{LORE_TITLE_MAX_CHARS}
+                                    </span>
+                                </div>
+                                <Tip content={t('notes.moveUp', '위로')}>
+                                    <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => moveLore(project.id, entry.id, -1)} disabled={number === 1}>
+                                        <ArrowUp className="h-4 w-4" />
+                                    </Button>
+                                </Tip>
+                                <Tip content={t('notes.moveDown', '아래로')}>
+                                    <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => moveLore(project.id, entry.id, 1)} disabled={number === project.lore.length}>
+                                        <ArrowDown className="h-4 w-4" />
+                                    </Button>
+                                </Tip>
+                                <Tip content={t('notes.delete', '삭제')}>
+                                    <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive hover:bg-destructive/10 hover:text-destructive" onClick={() => setDeleteId(entry.id)} aria-label={t('notes.delete', '삭제')}>
+                                        <Trash2 className="h-4 w-4" />
+                                    </Button>
+                                </Tip>
                             </div>
-                        )}
-                    </div>
-                    <NoteImages images={selected.images} onChange={images => updateLore(project.id, selected.id, { images })} />
-                    <div className="flex justify-end gap-2">
-                        <Button variant="outline" size="sm" className="h-8" disabled={!selected.content.trim()} onClick={() => onTranslate(selected.content)}>
-                            <Languages className="mr-1.5 h-3.5 w-3.5" />
-                            {t('notes.toTranslator', '번역기로')}
-                        </Button>
-                        <CopyButton text={formatLoreEntry(selected)} label={t('notes.copy', '복사')} done={t('notes.lore.copied', '항목을 복사했어요')} />
-                    </div>
-                </div>
-            ) : (
-                <div className="flex flex-1 items-center justify-center text-sm text-muted-foreground">
-                    {t('notes.lore.pick', '왼쪽에서 항목을 고르거나 새로 만드세요.')}
-                </div>
-            )}
+
+                            <div className="mt-3 grid gap-1.5">
+                                <label className="text-xs font-medium text-muted-foreground">{t('notes.lore.keywordsLabel', '키워드')}</label>
+                                {keywords.length > 0 && (
+                                    <div className="flex flex-wrap gap-1">
+                                        {keywords.map(keyword => (
+                                            <span key={keyword} data-keyword-chip className="rounded-md bg-primary/15 px-2 py-0.5 text-[11px] font-medium text-primary">{keyword}</span>
+                                        ))}
+                                    </div>
+                                )}
+                                <Input
+                                    value={entry.keywords}
+                                    onChange={event => updateLore(project.id, entry.id, { keywords: clampChars(event.target.value, LORE_KEYWORDS_MAX_CHARS) })}
+                                    placeholder={t('notes.lore.keywordsPlaceholder', '키워드를 쉼표로 구분하여 입력하세요 (예: 마법, 주문, 마법사)')}
+                                    className="h-9 text-sm"
+                                />
+                            </div>
+
+                            <div className="mt-3 grid gap-1.5">
+                                <label className="text-xs font-medium text-muted-foreground">{t('notes.lore.content', '내용')}</label>
+                                <Textarea
+                                    value={entry.content}
+                                    onChange={event => updateLore(project.id, entry.id, { content: clampChars(event.target.value, LORE_CONTENT_MAX_CHARS) })}
+                                    placeholder={t('notes.lore.contentPlaceholder', '이 항목의 설정을 적어 보세요 (최대 500자)')}
+                                    className="h-40 resize-y text-sm leading-relaxed"
+                                    spellCheck={false}
+                                />
+                                <div className="flex justify-end">
+                                    <CharCounter count={countChars(entry.content)} max={LORE_CONTENT_MAX_CHARS} />
+                                </div>
+                            </div>
+
+                            <div className="mt-2 flex flex-wrap items-end justify-between gap-2">
+                                <NoteImages images={entry.images} onChange={images => updateLore(project.id, entry.id, { images })} />
+                                <div className="flex gap-2">
+                                    <Button variant="outline" size="sm" className="h-8" disabled={!entry.content.trim()} onClick={() => onTranslate(entry.content)}>
+                                        <Languages className="mr-1.5 h-3.5 w-3.5" />
+                                        {t('notes.toTranslator', '번역기로')}
+                                    </Button>
+                                    <CopyButton text={formatLoreEntry(entry)} label={t('notes.copy', '복사')} done={t('notes.lore.copied', '항목을 복사했어요')} />
+                                </div>
+                            </div>
+                        </article>
+                    )
+                })}
+                {visible.length === 0 && (
+                    <p className="py-16 text-center text-sm text-muted-foreground">
+                        {project.lore.length === 0
+                            ? t('notes.lore.empty', '"추가"로 첫 항목을 만들거나, txt를 가져와 보세요.')
+                            : t('notes.lore.noMatch', '검색 결과가 없습니다.')}
+                    </p>
+                )}
+                {!full && visible.length > 0 && !query.trim() && (
+                    <button
+                        type="button"
+                        onClick={handleAdd}
+                        className="flex w-full items-center justify-center gap-1.5 rounded-xl border border-dashed border-border/70 py-3 text-sm text-muted-foreground transition-colors hover:bg-muted/40 hover:text-foreground"
+                    >
+                        <Plus className="h-4 w-4" />
+                        {t('notes.lore.addMore', '항목 추가 ({{n}}/{{max}})', { n: project.lore.length, max: LORE_MAX_ENTRIES })}
+                    </button>
+                )}
+            </div>
 
             <ConfirmDialog
                 open={deleteId !== null}

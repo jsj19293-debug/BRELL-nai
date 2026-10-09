@@ -60,3 +60,59 @@ assert.equal(
 assert.equal(formatProject({ name: '빈 작품', world: '', lore: [] }), '# 빈 작품')
 
 console.log('Prompt notes checks passed: limits, counting, keywords, images, search, copy text.')
+
+// --- 로어북 ↔ txt (메모장 양식) ---
+{
+    const { formatLoreTxt, loreTxtFileName, parseLoreTxt } = await import('../src/lib/prompt-notes.ts')
+    const lore = [
+        { title: '일반모드', keywords: '1, !일반모드', content: '일반모드 | 1️⃣\n¶수락:⚪에서 U가 "{세력명} 의뢰시작" 직접 입력 시만 🔴\n¶표기:수락 세력 이모지+건수' },
+        { title: '커스텀모드', keywords: '!커스텀모드', content: '\n키워드: !커스텀모드\n\n[핵심 규칙]\nU가 입력 시 최우선\n\n[예시]\n"!커스텀모드 나는 황제이다.  \n' },
+    ]
+    const txt = formatLoreTxt(lore)
+    assert.equal(txt, [
+        '---', '',
+        '## 01 일반모드',
+        '일반모드 | 1️⃣',
+        '¶수락:⚪에서 U가 "{세력명} 의뢰시작" 직접 입력 시만 🔴',
+        '¶표기:수락 세력 이모지+건수',
+        '', '---', '',
+        '## 02 커스텀모드',
+        '',
+        '키워드: !커스텀모드',
+        '',
+        '[핵심 규칙]',
+        'U가 입력 시 최우선',
+        '',
+        '[예시]',
+        '"!커스텀모드 나는 황제이다.',
+        '', '---', '',
+    ].join('\n'))
+    // 등록한 키워드는 들어가지 않는다 (내용에 직접 적은 "키워드:" 줄은 내용이라 그대로)
+    assert.ok(!txt.includes('1, !일반모드'))
+    assert.equal(formatLoreTxt([]), '')
+    assert.ok(formatLoreTxt([{ title: ' ', content: '' }]).includes('## 01 제목 없음\n\n---'))
+    assert.ok(formatLoreTxt(Array.from({ length: 120 }, (_, i) => ({ title: `t${i}`, content: 'c' }))).includes('## 001 t0\nc'))
+
+    // 다시 읽으면 제목(번호 제외)과 내용이 그대로 돌아온다
+    const parsed = parseLoreTxt(txt)
+    assert.deepEqual(parsed, {
+        entries: [
+            { title: '일반모드', content: lore[0].content },
+            { title: '커스텀모드', content: '키워드: !커스텀모드\n\n[핵심 규칙]\nU가 입력 시 최우선\n\n[예시]\n"!커스텀모드 나는 황제이다.' },
+        ],
+        truncated: 0,
+    })
+    // 메모장에서 저장한 모양(BOM, CRLF), 번호 없는 제목, 번호 뒤 점
+    const windows = parseLoreTxt('﻿---\r\n\r\n## 제목만\r\n첫 줄\r\n둘째 줄\r\n\r\n---\r\n\r\n## 3. 점 번호\r\n내용\r\n---\r\n버려지는 글\r\n')
+    assert.deepEqual(windows.entries, [{ title: '제목만', content: '첫 줄\n둘째 줄' }, { title: '점 번호', content: '내용' }])
+    // 구분선 없이 제목만으로 나뉜 글도 읽는다
+    assert.deepEqual(parseLoreTxt('## 01 A\n가\n## 02 B\n나').entries, [{ title: 'A', content: '가' }, { title: 'B', content: '나' }])
+    // 한도를 넘으면 자르고 몇 개인지 알려준다
+    const long = parseLoreTxt(`## 01 긴 것\n${'가'.repeat(600)}\n\n---\n\n## 02 짧은 것\n나`)
+    assert.equal(countChars(long.entries[0].content), 500)
+    assert.equal(long.truncated, 1)
+    assert.deepEqual(parseLoreTxt('그냥 글\n제목 없음'), { entries: [], truncated: 0 })
+    assert.equal(loreTxtFileName('무림: 화해/중재?'), '무림_ 화해_중재__로어북.txt')
+    assert.equal(loreTxtFileName('  '), '로어북_로어북.txt')
+    console.log('Lorebook txt checks passed.')
+}

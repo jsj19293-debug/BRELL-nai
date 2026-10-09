@@ -834,7 +834,7 @@ async fn rell_translate_free(text: String, target: String) -> Result<String, Str
     if text.is_empty() || text.len() > 500 {
         return Err("INVALID_TEXT".to_string());
     }
-    if !["en", "ja", "zh-CN"].contains(&target.as_str()) {
+    if !["en", "ja", "zh-CN", "zh-TW"].contains(&target.as_str()) {
         return Err("INVALID_TARGET".to_string());
     }
     let langpair = format!("ko|{target}");

@@ -11,7 +11,7 @@ export type TranslateTarget = 'en' | 'zh' | 'ja'
 export type TranslateEngine = 'deepl' | 'free'
 
 export const TRANSLATE_TARGETS: TranslateTarget[] = ['en', 'zh', 'ja']
-export const TRANSLATE_TARGET_LABELS: Record<TranslateTarget, string> = { en: '영어', zh: '중국어(간체)', ja: '일본어' }
+export const TRANSLATE_TARGET_LABELS: Record<TranslateTarget, string> = { en: '영어', zh: '중국어(번체)', ja: '일본어' }
 /** 번역기에 넣을 수 있는 글 길이 (세계관 한도와 같다) */
 export const TRANSLATE_MAX_CHARS = 10_000
 /** 무료 엔진으로 한 번에 번역할 수 있는 길이: 하루 사용량이 작아서 짧게 막아 둔다. */
@@ -19,8 +19,8 @@ export const FREE_ENGINE_MAX_CHARS = 1_000
 /** MyMemory는 요청 하나가 UTF-8 500바이트까지 */
 export const FREE_ENGINE_CHUNK_BYTES = 450
 
-export const DEEPL_TARGET: Record<TranslateTarget, string> = { en: 'EN-US', zh: 'ZH-HANS', ja: 'JA' }
-export const FREE_TARGET: Record<TranslateTarget, string> = { en: 'en', zh: 'zh-CN', ja: 'ja' }
+export const DEEPL_TARGET: Record<TranslateTarget, string> = { en: 'EN-US', zh: 'ZH-HANT', ja: 'JA' }
+export const FREE_TARGET: Record<TranslateTarget, string> = { en: 'en', zh: 'zh-TW', ja: 'ja' }
 
 export type TranslateErrorCode = 'NO_KEY' | 'BAD_KEY' | 'QUOTA' | 'TOO_LONG' | 'NETWORK' | 'EMPTY' | 'FAILED'
 

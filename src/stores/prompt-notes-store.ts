@@ -2,7 +2,7 @@ import { create } from 'zustand'
 import { persist, createJSONStorage } from 'zustand/middleware'
 import { indexedDBStorage } from '@/lib/indexed-db'
 import {
-    PROJECT_MAX_COUNT, PROJECT_NAME_MAX_CHARS, WORLD_MAX_CHARS, IMAGES_MAX_PER_ITEM,
+    PROJECT_MAX_COUNT, PROJECT_NAME_MAX_CHARS, WORLD_MAX_CHARS, IMAGES_MAX_PER_ITEM, LORE_MAX_ENTRIES,
     canAddLore, canAddMemo, clampChars, createProject, normalizeLore, normalizeMemo,
     type LoreEntry, type MemoNote, type PromptProject,
 } from '@/lib/prompt-notes'
@@ -22,6 +22,8 @@ interface PromptNotesState {
     setWorldImages: (projectId: string, images: string[]) => void
 
     addLore: (projectId: string) => string | null
+    /** txt에서 읽은 항목들을 뒤에 붙인다. 150개를 넘는 것은 버리고, 실제로 넣은 개수를 돌려준다. */
+    importLore: (projectId: string, entries: Array<{ title: string; content: string }>) => number
     updateLore: (projectId: string, loreId: string, patch: Partial<Omit<LoreEntry, 'id'>>) => void
     deleteLore: (projectId: string, loreId: string) => void
     moveLore: (projectId: string, loreId: string, direction: -1 | 1) => void
@@ -78,6 +80,17 @@ export const usePromptNotesStore = create<PromptNotesState>()(
                     const entry: LoreEntry = { id: newId(), title: '', content: '', keywords: '', images: [], updatedAt: Date.now() }
                     patchProject(projectId, current => ({ ...current, lore: [...current.lore, entry] }))
                     return entry.id
+                },
+                importLore: (projectId, entries) => {
+                    const project = get().projects.find(candidate => candidate.id === projectId)
+                    if (!project) return 0
+                    const room = Math.max(0, LORE_MAX_ENTRIES - project.lore.length)
+                    const now = Date.now()
+                    const added = entries.slice(0, room).map(entry => normalizeLore({
+                        id: newId(), title: entry.title, content: entry.content, keywords: '', images: [], updatedAt: now,
+                    }))
+                    if (added.length > 0) patchProject(projectId, current => ({ ...current, lore: [...current.lore, ...added] }))
+                    return added.length
                 },
                 updateLore: (projectId, loreId, patch) => patchProject(projectId, project => ({
                     ...project,

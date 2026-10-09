@@ -12,8 +12,8 @@ assert.equal(pickEngine('  '), 'free')
 assert.equal(pickEngine('abc:fx'), 'deepl')
 assert.equal(isDeeplFreeKey(' abc:fx '), true)
 assert.equal(isDeeplFreeKey('abc'), false)
-assert.deepEqual([DEEPL_TARGET.en, DEEPL_TARGET.zh, DEEPL_TARGET.ja], ['EN-US', 'ZH-HANS', 'JA'])
-assert.deepEqual([FREE_TARGET.en, FREE_TARGET.zh, FREE_TARGET.ja], ['en', 'zh-CN', 'ja'])
+assert.deepEqual([DEEPL_TARGET.en, DEEPL_TARGET.zh, DEEPL_TARGET.ja], ['EN-US', 'ZH-HANT', 'JA'])
+assert.deepEqual([FREE_TARGET.en, FREE_TARGET.zh, FREE_TARGET.ja], ['en', 'zh-TW', 'ja'])
 
 // --- 나누기: 이어 붙이면 원문, 조각마다 한도 이하, 줄바꿈 유지 ---
 {
@@ -59,7 +59,7 @@ assert.throws(() => readFreeResponse('안녕', '{"responseStatus":403,"responseD
     await assert.rejects(translateText('글', 'en', { engine: 'deepl', deeplApiKey: '', transport }), error => error.code === 'NO_KEY')
     await assert.rejects(translateText('가'.repeat(10001), 'en', { engine: 'deepl', deeplApiKey: 'k', transport }), error => error.code === 'TOO_LONG')
     // 1만 자는 된다
-    assert.ok((await translateText('가'.repeat(10000), 'zh', { engine: 'deepl', deeplApiKey: 'k', transport })).startsWith('<ZH-HANS:'))
+    assert.ok((await translateText('가'.repeat(10000), 'zh', { engine: 'deepl', deeplApiKey: 'k', transport })).startsWith('<ZH-HANT:'))
     const failing = status => ({ ...transport, deepl: async () => { throw new Error(`HTTP_${status}`) } })
     await assert.rejects(translateText('글', 'en', { engine: 'deepl', deeplApiKey: 'k', transport: failing(403) }), error => error.code === 'BAD_KEY')
     await assert.rejects(translateText('글', 'en', { engine: 'deepl', deeplApiKey: 'k', transport: failing(456) }), error => error.code === 'QUOTA')
@@ -76,8 +76,8 @@ assert.throws(() => readFreeResponse('안녕', '{"responseStatus":403,"responseD
         free: async (text, target) => { calls.push([text, target]); return JSON.stringify({ responseStatus: 200, responseData: { translatedText: `[${target}] ${text.length}` } }) },
     }
     const result = await translateText('첫 줄입니다.\n\n둘째 줄입니다.', 'zh', { engine: 'free', transport })
-    assert.equal(result, '[zh-CN] 7\n\n[zh-CN] 8')
-    assert.deepEqual(calls, [['첫 줄입니다.', 'zh-CN'], ['둘째 줄입니다.', 'zh-CN']])
+    assert.equal(result, '[zh-TW] 7\n\n[zh-TW] 8')
+    assert.deepEqual(calls, [['첫 줄입니다.', 'zh-TW'], ['둘째 줄입니다.', 'zh-TW']])
     calls.length = 0
     const long = '문장입니다. '.repeat(120).trim()   // 약 840자
     const translated = await translateText(long, 'en', { engine: 'free', transport })

@@ -168,3 +168,81 @@ export function formatProject(project: Pick<PromptProject, 'name' | 'world' | 'l
 export function totalLoreChars(entries: readonly LoreEntry[]): number {
     return entries.reduce((sum, entry) => sum + countChars(entry.content), 0)
 }
+
+// ---------------------------------------------------------------------------
+// 로어북 ↔ txt (메모장)
+//
+// ---
+//
+// ## 01 제목
+// 내용
+//
+// ---
+//
+// ## 02 제목
+// 내용
+//
+// ---
+// ---------------------------------------------------------------------------
+
+const LORE_TXT_SEPARATOR = '---'
+
+/** 로어북 전체를 메모장용 글로 만든다. 키워드는 넣지 않는다 (제목과 내용만). */
+export function formatLoreTxt(entries: ReadonlyArray<Pick<LoreEntry, 'title' | 'content'>>): string {
+    if (entries.length === 0) return ''
+    const width = Math.max(2, String(entries.length).length)
+    const blocks = entries.map((entry, index) => {
+        const number = String(index + 1).padStart(width, '0')
+        const title = entry.title.trim() || '제목 없음'
+        const content = entry.content.replace(/\r\n?/g, '\n').replace(/\s+$/, '')
+        return `## ${number} ${title}${content ? `\n${content}` : ''}`
+    })
+    return `${LORE_TXT_SEPARATOR}\n\n${blocks.join(`\n\n${LORE_TXT_SEPARATOR}\n\n`)}\n\n${LORE_TXT_SEPARATOR}\n`
+}
+
+export interface ParsedLoreTxt {
+    entries: Array<{ title: string; content: string }>
+    /** 한도(제목 60자, 내용 500자)를 넘어서 잘린 항목 수 */
+    truncated: number
+}
+
+/**
+ * 위 양식의 글을 로어북 항목으로 읽는다. "## 01 제목" 줄이 항목의 시작이고, 그 아래가 내용이다.
+ * 제목 앞의 번호는 버린다. "---" 줄은 항목 사이의 구분선으로만 본다.
+ */
+export function parseLoreTxt(text: string): ParsedLoreTxt {
+    const lines = text.replace(/^﻿/, '').replace(/\r\n?/g, '\n').split('\n')
+    const raw: Array<{ title: string; lines: string[] }> = []
+    let current: { title: string; lines: string[] } | null = null
+
+    for (const line of lines) {
+        const heading = line.match(/^##\s+(.*)$/)
+        if (heading) {
+            current = { title: heading[1].replace(/^\d+\s*[.)]?\s+/, '').trim(), lines: [] }
+            raw.push(current)
+            continue
+        }
+        if (line.trim() === LORE_TXT_SEPARATOR) {
+            // 구분선 뒤에 제목 없이 이어지는 글은 어느 항목에도 넣지 않는다.
+            current = null
+            continue
+        }
+        current?.lines.push(line)
+    }
+
+    let truncated = 0
+    const entries = raw.map(item => {
+        const content = item.lines.join('\n').trim()
+        const title = clampChars(item.title, LORE_TITLE_MAX_CHARS)
+        const clamped = clampChars(content, LORE_CONTENT_MAX_CHARS)
+        if (clamped !== content || title !== item.title) truncated++
+        return { title, content: clamped }
+    })
+    return { entries, truncated }
+}
+
+/** txt 파일 이름: 작품 이름에서 파일에 못 쓰는 글자를 뺀다. */
+export function loreTxtFileName(projectName: string): string {
+    const safe = projectName.replace(/[<>:"/\\|?*\u0000-\u001f]/g, '_').trim().replace(/[. ]+$/, '')
+    return `${safe || '로어북'}_로어북.txt`
+}
