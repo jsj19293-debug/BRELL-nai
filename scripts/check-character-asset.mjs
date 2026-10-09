@@ -95,6 +95,39 @@ assert.equal(clampAssetQueueCount('x'), 1)
     assert.equal(characterExportFolderName({ characterName: ' . ' }), '캐릭터')
 }
 
+// --- i2i 싸이클 예약과 진행표 ---
+{
+    const { characterAssetProgress, presetWantsI2iCycle, progressPercent } = await import('../src/lib/character-asset-presets.ts')
+    const plan = planCharacterAssetPresets(presets, ['A'], [{ id: 'rick', name: '릭' }], { ...options, i2iCycle: true }, makeId)
+    assert.equal(plan.created[0].characterAsset.i2iCycle, true)
+    assert.equal('i2iCycle' in planCharacterAssetPresets(presets, ['A'], [{ id: 'rick', name: '릭' }], options, makeId).created[0].characterAsset, false)
+    // 싸이클을 예약한 캐릭터씬은 씬 모드의 스위치가 꺼져 있어도 싸이클을 돌린다
+    assert.equal(presetWantsI2iCycle(false, plan.created[0], true), true)
+    assert.equal(presetWantsI2iCycle(false, plan.created[0], false), false)   // 캐릭터 에셋 기능을 끔
+    assert.equal(presetWantsI2iCycle(false, presets[1], true), false)         // 보통 작품
+    assert.equal(presetWantsI2iCycle(true, presets[1], false), true)          // 스위치가 켜져 있으면 언제나
+    assert.equal(presetWantsI2iCycle(false, null, true), false)
+
+    const img = n => Array.from({ length: n }, (_, i) => ({ id: String(i) }))
+    const sc = (id, images, queueCount = 0) => ({ id, name: id, images: img(images), queueCount, createdAt: 1 })
+    const asset = (parentPresetId, characterPromptId, characterName, i2iCycle) => ({ parentPresetId, characterPromptId, characterName, referenceIds: [], ...(i2iCycle ? { i2iCycle } : {}) })
+    const list = [
+        { id: 'A', name: 'A', scenes: [sc('a', 5)], createdAt: 1 },
+        { id: 'ra', name: '릭 - A', createdAt: 2, characterAsset: asset('A', 'rick', '릭'), scenes: [sc('1', 1), sc('2', 3), sc('3', 0, 1), sc('4', 0, 2)] },
+        { id: 'rb', name: '릭 - B', createdAt: 3, characterAsset: asset('goneB', 'rick', '릭', true), scenes: [sc('1', 2), sc('2', 1, 1), sc('3', 0, 1)] },
+        { id: 'la', name: '루나 - A', createdAt: 4, characterAsset: asset('A', 'luna', '루나'), scenes: [] },
+    ]
+    const progress = characterAssetProgress(list)
+    assert.deepEqual(progress.map(group => [group.characterName, group.doneScenes, group.totalScenes, group.images, group.queued]), [['릭', 3, 7, 7, 5], ['루나', 0, 0, 0, 0]])
+    assert.deepEqual(progress[0].rows.map(row => [row.sourceName, row.doneScenes, row.totalScenes, row.queued, row.i2iCycle]), [
+        ['A', 2, 4, 3, false],
+        ['B', 1, 3, 2, true],      // 싸이클이면 2장(레퍼런스 + i2i)이 있어야 완료
+    ])
+    assert.equal(progressPercent(3, 7), 43)
+    assert.equal(progressPercent(0, 0), 0)
+    assert.equal(progressPercent(9, 7), 100)
+}
+
 // --- 프롬프트 관리 JSON 저장 · 불러오기 ---
 {
     const { exportNotesJson, mergeImportedProjects, parseNotesJson } = await import('../src/lib/prompt-notes.ts')

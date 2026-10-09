@@ -197,7 +197,7 @@ interface SceneState {
     createCharacterAssetPresets: (
         sourcePresetIds: string[],
         characters: AssetCharacter[],
-        options: { referenceIds: string[]; queueCount: number },
+        options: { referenceIds: string[]; queueCount: number; i2iCycle?: boolean },
     ) => { createdIds: string[]; skipped: string[] }
     deletePreset: (id: string) => void
     renamePreset: (id: string, name: string) => Promise<number>

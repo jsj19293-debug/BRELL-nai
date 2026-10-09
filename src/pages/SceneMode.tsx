@@ -171,6 +171,7 @@ import { save } from '@tauri-apps/plugin-dialog'
 import { ExportDialog } from '@/components/scene/ExportDialog'
 import { SceneWebpExportDialog } from '@/components/scene/SceneWebpExportDialog'
 import { refreshPresetFromFolders } from '@/services/scene-folder-refresh'
+import { characterAssetProgress } from '@/lib/character-asset-presets'
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import { RESOLUTION_PRESETS, ResolutionPresetSelector, Resolution } from '@/components/ui/ResolutionSelector'
 import { Switch } from '@/components/ui/switch'
@@ -635,6 +636,12 @@ export default function SceneMode() {
 
     const [showExportDialog, setShowExportDialog] = useState(false)
     const [showWebpExportDialog, setShowWebpExportDialog] = useState(false)
+    // 캐릭터씬이면 그 캐릭터와 진행 상황을 도구 모음에 보여준다.
+    const characterProgress = useMemo(() => {
+        if (!activePreset?.characterAsset) return null
+        const row = characterAssetProgress([activePreset])[0]?.rows[0]
+        return row ? { characterName: activePreset.characterAsset.characterName, ...row } : null
+    }, [activePreset])
     const [isRefreshingFolders, setIsRefreshingFolders] = useState(false)
 
     // 씬 폴더를 다시 읽어서, 실제로 있는 파일에 맞게 씬 이미지 목록을 고친다.
@@ -940,6 +947,18 @@ export default function SceneMode() {
                                 WebP
                             </Button>
                         </Tip>
+                        {characterProgress && (
+                            <Tip content={t('characterAsset.chipTip', "캐릭터씬 · '{{name}}'(으)로만 생성됩니다{{cycle}}", {
+                                name: characterProgress.characterName,
+                                cycle: characterProgress.i2iCycle ? t('characterAsset.chipCycle', ' · i2i 싸이클 예약됨') : '',
+                            })}>
+                                <span data-character-chip className="flex h-8 shrink-0 items-center gap-1.5 rounded-lg border border-primary/40 bg-primary/10 px-2 text-[11px] font-medium text-primary">
+                                    <span className="max-w-[7rem] truncate">{characterProgress.characterName}</span>
+                                    <span className="tabular-nums opacity-80">{characterProgress.doneScenes}/{characterProgress.totalScenes}</span>
+                                    {characterProgress.i2iCycle && <span className="rounded bg-primary/20 px-1 text-[10px]">i2i</span>}
+                                </span>
+                            </Tip>
+                        )}
                         {isRenamingPreset ? (
                             <PresetRenameInput
                                 initialValue={activePreset?.name || ''}

@@ -11,6 +11,7 @@ import { toast } from '@/components/ui/use-toast'
 import { useSceneStore, type SceneCharacterSequenceEntry } from '@/stores/scene-store'
 import { useSettingsStore } from '@/stores/settings-store'
 import { calculateGenerationDelay } from '@/lib/generation-delay'
+import { presetWantsI2iCycle } from '@/lib/character-asset-presets'
 import { generateSceneImage, type SceneImageSavedInfo } from '@/services/scene-generation'
 import {
     beginCycle,
@@ -40,7 +41,11 @@ const showPhase = (phase: SceneI2iCyclePhase, done = 0, total = 0) => useSceneI2
 /** 예약 큐가 한 장을 처리하기 전에 부른다. 새 세션이면 그 시점의 설정으로 싸이클을 정한다. */
 export function ensureSceneI2iCycle(sessionId: number): void {
     if (cycle.sessionId === sessionId) return
-    cycle = beginCycle(cycle, sessionId, useSettingsStore.getState().sceneRefI2iCycleEnabled)
+    // 씬 모드의 스위치가 켜져 있거나, 지금 생성하는 캐릭터씬에 싸이클이 예약돼 있으면 돌린다.
+    const settings = useSettingsStore.getState()
+    const scenes = useSceneStore.getState()
+    const preset = scenes.presets.find(candidate => candidate.id === scenes.activePresetId)
+    cycle = beginCycle(cycle, sessionId, presetWantsI2iCycle(settings.sceneRefI2iCycleEnabled, preset, settings.characterAssetScenesEnabled))
     showPhase(cycle.phase)
 }
 

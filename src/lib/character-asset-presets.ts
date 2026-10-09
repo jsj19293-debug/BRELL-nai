@@ -10,6 +10,8 @@ export interface CharacterAssetInfo {
     characterName: string
     /** 이 캐릭터씬에서 쓸 캐릭터 레퍼런스 이미지 id. 비어 있으면 레퍼런스 없이 뽑는다. */
     referenceIds: string[]
+    /** 이 캐릭터씬을 생성할 때 레퍼런스 → i2i 싸이클을 함께 돌린다 (씬 모드의 싸이클 스위치와 상관없이) */
+    i2iCycle?: boolean
 }
 
 export interface AssetScene {
@@ -82,7 +84,7 @@ export function planCharacterAssetPresets<Scene extends AssetScene, Preset exten
     presets: readonly Preset[],
     sourcePresetIds: readonly string[],
     characters: readonly AssetCharacter[],
-    options: { referenceIds: readonly string[]; queueCount: number; now: number },
+    options: { referenceIds: readonly string[]; queueCount: number; now: number; i2iCycle?: boolean },
     makeId: (index: number) => string,
 ): CharacterAssetPlan<Preset> {
     // 캐릭터씬을 골랐으면 그 원본 작품으로 바꾸고, 겹치는 것은 한 번만.
@@ -117,7 +119,13 @@ export function planCharacterAssetPresets<Scene extends AssetScene, Preset exten
                 id: presetId,
                 name: uniqueName(`${characterName} - ${source.name}`, takenNames),
                 createdAt: options.now,
-                characterAsset: { parentPresetId: source.id, characterPromptId: character.id, characterName, referenceIds: [...referenceIds] },
+                characterAsset: {
+                    parentPresetId: source.id,
+                    characterPromptId: character.id,
+                    characterName,
+                    referenceIds: [...referenceIds],
+                    ...(options.i2iCycle ? { i2iCycle: true } : {}),
+                },
                 scenes: source.scenes.map((scene, sceneIndex) => ({
                     ...scene,
                     id: `${presetId}-scene-${sceneIndex}`,
@@ -197,4 +205,78 @@ export function characterExportTargets<Preset extends AssetPreset>(
             taken.add(folderName.toLocaleLowerCase())
             return { preset, folderName }
         })
+}
+
+/** 이 프리셋을 생성할 때 i2i 싸이클을 돌릴지: 씬 모드의 스위치가 켜져 있거나, 캐릭터씬에 싸이클이 예약돼 있을 때. */
+export function presetWantsI2iCycle(
+    globalEnabled: boolean,
+    preset: Pick<AssetPreset, 'characterAsset'> | null | undefined,
+    characterAssetsEnabled: boolean,
+): boolean {
+    return globalEnabled || (characterAssetsEnabled && !!preset?.characterAsset?.i2iCycle)
+}
+
+// ---------------------------------------------------------------------------
+// 캐릭터씬 진행표
+// ---------------------------------------------------------------------------
+
+export interface CharacterProgressRow {
+    presetId: string
+    presetName: string
+    /** 원본 작품 이름 (예: A) */
+    sourceName: string
+    totalScenes: number
+    /** 필요한 장수를 채운 씬 수 (싸이클이면 레퍼런스 1장 + i2i 1장 = 2장) */
+    doneScenes: number
+    images: number
+    /** 아직 예약돼 있는 장수 */
+    queued: number
+    i2iCycle: boolean
+}
+
+export interface CharacterProgressGroup {
+    characterPromptId: string
+    characterName: string
+    rows: CharacterProgressRow[]
+    totalScenes: number
+    doneScenes: number
+    images: number
+    queued: number
+}
+
+/** 캐릭터별로 캐릭터씬들의 진행 상황을 모은다 (목록에 나오는 순서 그대로). */
+export function characterAssetProgress<Preset extends AssetPreset>(presets: readonly Preset[]): CharacterProgressGroup[] {
+    const groups = new Map<string, CharacterProgressGroup>()
+    for (const preset of presets) {
+        const asset = preset.characterAsset
+        if (!asset) continue
+        const needed = asset.i2iCycle ? 2 : 1
+        const prefix = `${asset.characterName} - `
+        const parent = presets.find(candidate => candidate.id === asset.parentPresetId)
+        const row: CharacterProgressRow = {
+            presetId: preset.id,
+            presetName: preset.name,
+            sourceName: parent?.name ?? (preset.name.startsWith(prefix) ? preset.name.slice(prefix.length) : preset.name),
+            totalScenes: preset.scenes.length,
+            doneScenes: preset.scenes.filter(scene => scene.images.length >= needed).length,
+            images: preset.scenes.reduce((sum, scene) => sum + scene.images.length, 0),
+            queued: preset.scenes.reduce((sum, scene) => sum + Math.max(0, scene.queueCount), 0),
+            i2iCycle: !!asset.i2iCycle,
+        }
+        let group = groups.get(asset.characterPromptId)
+        if (!group) {
+            group = { characterPromptId: asset.characterPromptId, characterName: asset.characterName, rows: [], totalScenes: 0, doneScenes: 0, images: 0, queued: 0 }
+            groups.set(asset.characterPromptId, group)
+        }
+        group.rows.push(row)
+        group.totalScenes += row.totalScenes
+        group.doneScenes += row.doneScenes
+        group.images += row.images
+        group.queued += row.queued
+    }
+    return [...groups.values()]
+}
+
+export function progressPercent(done: number, total: number): number {
+    return total > 0 ? Math.min(100, Math.round((done / total) * 100)) : 0
 }
