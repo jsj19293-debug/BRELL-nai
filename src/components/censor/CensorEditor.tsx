@@ -25,7 +25,7 @@ interface CensorEditorProps {
 
 /**
  * 검열 탭의 그리기 화면. 도구(솔리드 펜 · 블러 · 지우개, 모양, 크기, 색, 불투명도)는 수동검열 창과 같다.
- * 휠로 확대 · 축소, Ctrl+휠로 브러시 크기, 휠 버튼으로 끌어서 이동, Ctrl+Z / Ctrl+Y 로 되돌리기.
+ * 휠로 확대 · 축소, Ctrl+휠로 브러시 크기, Ctrl+왼쪽 클릭(또는 휠 버튼)으로 끌어서 이동, Ctrl+Z / Ctrl+Y 로 되돌리기.
  */
 export const CensorEditor = forwardRef<CensorEditorHandle, CensorEditorProps>(function CensorEditor({ source, brush, onBrushChange, onEditedChange }, ref) {
     const { t } = useTranslation()
@@ -281,8 +281,8 @@ export const CensorEditor = forwardRef<CensorEditorHandle, CensorEditorProps>(fu
     }
 
     const handlePointerDown = (event: ReactPointerEvent<HTMLCanvasElement>) => {
-        if (event.button === 1 && containerRef.current) {
-            // 휠 버튼: 끌어서 이동
+        if ((event.button === 1 || (event.button === 0 && (event.ctrlKey || event.metaKey))) && containerRef.current) {
+            // 휠 버튼 또는 Ctrl+왼쪽 버튼: 끌어서 이동
             event.preventDefault()
             event.currentTarget.setPointerCapture(event.pointerId)
             panStartRef.current = { x: event.clientX, y: event.clientY, scrollLeft: containerRef.current.scrollLeft, scrollTop: containerRef.current.scrollTop }
@@ -394,6 +394,21 @@ export const CensorEditor = forwardRef<CensorEditorHandle, CensorEditorProps>(fu
         cursor.style.borderRadius = shape === 'round' ? '9999px' : '0'
     }, [size, shape, zoom, displaySize])
 
+    // Ctrl 을 누르고 있으면 잡고 옮길 수 있다는 표시로 손 모양 커서를 보여 준다.
+    const [grabReady, setGrabReady] = useState(false)
+    useEffect(() => {
+        const update = (event: KeyboardEvent) => setGrabReady(event.ctrlKey || event.metaKey)
+        const clear = () => setGrabReady(false)
+        window.addEventListener('keydown', update)
+        window.addEventListener('keyup', update)
+        window.addEventListener('blur', clear)
+        return () => {
+            window.removeEventListener('keydown', update)
+            window.removeEventListener('keyup', update)
+            window.removeEventListener('blur', clear)
+        }
+    }, [])
+
     const toolButton = (value: CensorBrushMode, Icon: typeof Paintbrush, label: string) => (
         <Button
             type="button"
@@ -493,7 +508,7 @@ export const CensorEditor = forwardRef<CensorEditorHandle, CensorEditorProps>(fu
                         <canvas
                             ref={editCanvasRef}
                             data-censor-canvas
-                            className="absolute inset-0 h-full w-full cursor-crosshair touch-none"
+                            className={cn('absolute inset-0 h-full w-full touch-none', grabReady ? 'cursor-grab' : 'cursor-crosshair')}
                             onPointerDown={handlePointerDown}
                             onPointerMove={handlePointerMove}
                             onPointerUp={stopDrawing}
