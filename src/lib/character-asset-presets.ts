@@ -12,6 +12,13 @@ export interface CharacterAssetInfo {
     referenceIds: string[]
     /** 이 캐릭터씬을 생성할 때 레퍼런스 → i2i 싸이클을 함께 돌린다 (씬 모드의 싸이클 스위치와 상관없이) */
     i2iCycle?: boolean
+    /** 예약(대형) 생성으로 만든 프리셋 */
+    reservation?: boolean
+    /** 예약: 시드를 고정할지 풀지 */
+    seedMode?: 'fixed' | 'random'
+    fixedSeed?: number
+    /** 예약: i2i 이미지를 저장할 폴더 (이 아래에 씬 이름 폴더가 생긴다) */
+    i2iFolderRoot?: string
 }
 
 export interface AssetScene {
@@ -232,6 +239,7 @@ export interface CharacterProgressRow {
     /** 아직 예약돼 있는 장수 */
     queued: number
     i2iCycle: boolean
+    reservation: boolean
 }
 
 export interface CharacterProgressGroup {
@@ -245,23 +253,32 @@ export interface CharacterProgressGroup {
 }
 
 /** 캐릭터별로 캐릭터씬들의 진행 상황을 모은다 (목록에 나오는 순서 그대로). */
-export function characterAssetProgress<Preset extends AssetPreset>(presets: readonly Preset[]): CharacterProgressGroup[] {
+export function characterAssetProgress<Preset extends AssetPreset>(
+    presets: readonly Preset[],
+    kind: 'all' | 'asset' | 'reservation' = 'all',
+): CharacterProgressGroup[] {
     const groups = new Map<string, CharacterProgressGroup>()
     for (const preset of presets) {
         const asset = preset.characterAsset
         if (!asset) continue
+        if (kind === 'asset' && asset.reservation) continue
+        if (kind === 'reservation' && !asset.reservation) continue
         const needed = asset.i2iCycle ? 2 : 1
         const prefix = `${asset.characterName} - `
         const parent = presets.find(candidate => candidate.id === asset.parentPresetId)
         const row: CharacterProgressRow = {
             presetId: preset.id,
             presetName: preset.name,
-            sourceName: parent?.name ?? (preset.name.startsWith(prefix) ? preset.name.slice(prefix.length) : preset.name),
+            sourceName: parent?.name ?? (() => {
+                const bare = preset.name.replace(/^\[예약\]\s*/, '')
+                return bare.startsWith(prefix) ? bare.slice(prefix.length) : bare
+            })(),
             totalScenes: preset.scenes.length,
             doneScenes: preset.scenes.filter(scene => scene.images.length >= needed).length,
             images: preset.scenes.reduce((sum, scene) => sum + scene.images.length, 0),
             queued: preset.scenes.reduce((sum, scene) => sum + Math.max(0, scene.queueCount), 0),
             i2iCycle: !!asset.i2iCycle,
+            reservation: !!asset.reservation,
         }
         let group = groups.get(asset.characterPromptId)
         if (!group) {
