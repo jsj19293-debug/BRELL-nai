@@ -80,8 +80,8 @@ function v5TooltipLines(t: TFunction, view: V5UsageView): string[] {
             : t('account.v5.remaining', 'V5 생성 한도 잔량 {{percent}}%', { percent: view.percent }),
     ]
     if (!view.limited) {
-        lines.push(t('account.v5.estimatedImages', '약 {{count}}장 (23스텝 · 약 1MP 기준 예상치)', {
-            count: view.estimatedImages.toLocaleString(),
+        lines.push(t('account.v5.estimatedImages', '약 {{n}}장 (23스텝 · 약 1MP 기준 예상치)', {
+            n: view.estimatedImages.toLocaleString(),
         }))
     }
     if (view.full) {
@@ -129,7 +129,7 @@ export function V5UsageChip({ usage }: Pick<HeaderChipProps, 'usage'>) {
                     <span className="truncate font-normal opacity-80">
                         {view.limited
                             ? t('account.v5.limitedShort', '제한')
-                            : t('account.v5.imagesShort', '~{{count}}장', { count: view.estimatedImages.toLocaleString() })}
+                            : t('account.v5.imagesShort', '~{{n}}장', { n: view.estimatedImages.toLocaleString() })}
                     </span>
                 </div>
                 <div className="mt-0.5 h-1.5 overflow-hidden rounded-full bg-black/15 dark:bg-cyan-950/60">

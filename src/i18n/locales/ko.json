@@ -1329,8 +1329,8 @@
       "remaining": "V5 생성 한도 잔량 {{percent}}%",
       "limited": "V5 생성 한도 초과 (−{{percent}}%) · 충전될 때까지 제한돼요",
       "limitedShort": "제한",
-      "imagesShort": "~{{count}}장",
-      "estimatedImages": "약 {{count}}장 (23스텝 · 약 1MP 기준 예상치)",
+      "imagesShort": "~{{n}}장",
+      "estimatedImages": "약 {{n}}장 (23스텝 · 약 1MP 기준 예상치)",
       "full": "가득 참",
       "refill": "충전 속도 +{{rate}}%/시간 · 1%당 {{time}}",
       "untilFull": "100%까지 약 {{time}}"
@@ -1410,7 +1410,7 @@
     "connections": "연결 관리",
     "broken": {
       "title": "{{names}}에서 새 알림을 못 받고 있어요",
-      "kept": "이미 저장한 {{count}}건은 그대로 볼 수 있어요"
+      "kept": "이미 저장한 {{n}}건은 그대로 볼 수 있어요"
     },
     "state": {
       "checking": "로그인 상태를 확인하고 있어요…",
@@ -1438,8 +1438,8 @@
       "unread": "안 읽은 알림이 없어요.",
       "filtered": "조건에 맞는 알림이 없어요."
     },
-    "count": "{{count}}건",
-    "unreadCount": "안 읽음 {{count}}",
+    "count": "{{n}}건",
+    "unreadCount": "안 읽음 {{n}}",
     "lastCollected": "마지막 수집 {{time}}",
     "collecting": "수집 중",
     "nextSoon": "다음 곧",

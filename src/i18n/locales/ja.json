@@ -1327,8 +1327,8 @@
       "remaining": "V5 生成上限の残り {{percent}}%",
       "limited": "V5 上限超過 (−{{percent}}%) · 回復するまで制限されます",
       "limitedShort": "制限",
-      "imagesShort": "~{{count}}枚",
-      "estimatedImages": "約 {{count}}枚（23ステップ・約1MP基準の目安）",
+      "imagesShort": "~{{n}}枚",
+      "estimatedImages": "約 {{n}}枚（23ステップ・約1MP基準の目安）",
       "full": "満タン",
       "refill": "回復速度 +{{rate}}%/時間 · 1%あたり {{time}}",
       "untilFull": "100%まで約 {{time}}"
@@ -1420,7 +1420,7 @@
     "connections": "接続管理",
     "broken": {
       "title": "{{names}}から新しい通知を受け取れていません",
-      "kept": "保存済みの{{count}}件はそのまま見られます"
+      "kept": "保存済みの{{n}}件はそのまま見られます"
     },
     "pause": "収集を一時停止",
     "resume": "収集を再開",
@@ -1437,8 +1437,8 @@
       "unread": "未読の通知はありません。",
       "filtered": "条件に合う通知はありません。"
     },
-    "count": "{{count}}件",
-    "unreadCount": "未読 {{count}}",
+    "count": "{{n}}件",
+    "unreadCount": "未読 {{n}}",
     "lastCollected": "最終収集 {{time}}",
     "collecting": "収集中",
     "nextSoon": "次回まもなく",

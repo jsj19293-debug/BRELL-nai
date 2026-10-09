@@ -543,7 +543,7 @@ export default function Inbox() {
                                 {t('inbox.broken.title', '{{names}}에서 새 알림을 못 받고 있어요', { names: broken.map(p => platformLabel(t, p.id)).join(', ') })}
                             </p>
                             <p className="mt-0.5 truncate text-[11.5px] text-muted-foreground">
-                                {t('inbox.broken.kept', '이미 저장한 {{count}}건은 그대로 볼 수 있어요', { count: preserved.toLocaleString() })}
+                                {t('inbox.broken.kept', '이미 저장한 {{n}}건은 그대로 볼 수 있어요', { n: preserved.toLocaleString() })}
                                 {broken[0].detail ? ` · ${describeDetail(t, broken[0].detail)}` : ''}
                             </p>
                         </div>
@@ -694,8 +694,8 @@ export default function Inbox() {
 
                 <footer className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-muted-foreground">
                     <span className="tabular-nums">
-                        {t('inbox.count', '{{count}}건', { count: (data?.filtered || 0).toLocaleString() })}
-                        {data?.unread && !unreadOnly ? ` · ${t('inbox.unreadCount', '안 읽음 {{count}}', { count: data.unread.toLocaleString() })}` : ''}
+                        {t('inbox.count', '{{n}}건', { n: (data?.filtered || 0).toLocaleString() })}
+                        {data?.unread && !unreadOnly ? ` · ${t('inbox.unreadCount', '안 읽음 {{n}}', { n: data.unread.toLocaleString() })}` : ''}
                     </span>
                     <span className="tabular-nums text-muted-foreground/80">
                         {data?.collectorOnline

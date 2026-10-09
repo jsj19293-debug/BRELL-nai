@@ -1328,8 +1328,8 @@
       "remaining": "V5 generation limit: {{percent}}% left",
       "limited": "V5 limit exceeded (−{{percent}}%) · restricted until it refills",
       "limitedShort": "Limited",
-      "imagesShort": "~{{count}}",
-      "estimatedImages": "About {{count}} images (estimate at 23 steps, ~1MP)",
+      "imagesShort": "~{{n}}",
+      "estimatedImages": "About {{n}} images (estimate at 23 steps, ~1MP)",
       "full": "Full",
       "refill": "Refill +{{rate}}%/hour · {{time}} per 1%",
       "untilFull": "About {{time}} until 100%"
@@ -1421,7 +1421,7 @@
     "connections": "Connections",
     "broken": {
       "title": "Not receiving new notifications from {{names}}",
-      "kept": "The {{count}} already saved are still available"
+      "kept": "The {{n}} already saved are still available"
     },
     "pause": "Pause collection",
     "resume": "Resume collection",
@@ -1438,8 +1438,8 @@
       "unread": "No unread notifications.",
       "filtered": "No notifications match."
     },
-    "count": "{{count}} items",
-    "unreadCount": "{{count}} unread",
+    "count": "{{n}} items",
+    "unreadCount": "{{n}} unread",
     "lastCollected": "Last collected {{time}}",
     "collecting": "collecting",
     "nextSoon": "next soon",
