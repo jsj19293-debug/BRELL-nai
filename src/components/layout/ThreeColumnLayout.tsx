@@ -32,6 +32,7 @@ import {
     FolderOpen,
     NotebookPen,
     CalendarClock,
+    ShieldCheck,
     Eye,
     EyeOff,
     Images,
@@ -110,7 +111,7 @@ export function ThreeColumnLayout({ children }: ThreeColumnLayoutProps) {
     })))
     // 알림 모아보기는 세 칸(플랫폼·목록·상세)을 쓰므로 양쪽 패널 없이 전체 폭으로 보여준다.
     // 저장된 패널 설정은 건드리지 않아서 다른 탭으로 가면 그대로 돌아온다.
-    const fullWidthPage = location.pathname === '/inbox' || location.pathname === '/prompts' || location.pathname === '/reserve'
+    const fullWidthPage = location.pathname === '/inbox' || location.pathname === '/prompts' || location.pathname === '/reserve' || location.pathname === '/censor'
     const leftWidthRef = useRef(leftSidebarWidth)
     const rightWidthRef = useRef(rightSidebarWidth)
     const leftPanelRef = useRef<HTMLElement>(null)
@@ -119,6 +120,7 @@ export function ThreeColumnLayout({ children }: ThreeColumnLayoutProps) {
     const expertCloudR2Enabled = useSettingsStore(state => state.expertCloudR2Enabled)
     const blurModeFeatureEnabled = useSettingsStore(state => state.blurModeFeatureEnabled)
     const sceneReservationEnabled = useSettingsStore(state => state.sceneReservationEnabled)
+    const censorTabEnabled = useSettingsStore(state => state.censorTabEnabled)
     const blurModeEnabled = useSettingsStore(state => state.blurModeEnabled)
     const setBlurModeEnabled = useSettingsStore(state => state.setBlurModeEnabled)
     const expertSceneRandomCharactersEnabled = useSettingsStore(state => state.expertSceneRandomCharactersEnabled)
@@ -272,6 +274,7 @@ export function ThreeColumnLayout({ children }: ThreeColumnLayoutProps) {
         { path: '/', icon: Home, labelKey: 'nav.main' },
         { path: '/scenes', icon: Film, labelKey: 'nav.scenes' },
         ...(sceneReservationEnabled ? [{ path: '/reserve', icon: CalendarClock, labelKey: 'nav.reserve' }] : []),
+        ...(censorTabEnabled ? [{ path: '/censor', icon: ShieldCheck, labelKey: 'nav.censor' }] : []),
         { path: '/tools', icon: Wand2, labelKey: 'smartTools.title' },
         { path: '/folders', icon: FolderOpen, labelKey: 'nav.folders' },
         { path: '/prompts', icon: NotebookPen, labelKey: 'nav.prompts' },
@@ -522,7 +525,7 @@ export function ThreeColumnLayout({ children }: ThreeColumnLayoutProps) {
                     {/* Page Content */}
                     <main data-character-position-host className={cn(
                         "flex-1 relative",
-                        (location.pathname === '/' || location.pathname === '/library' || location.pathname === '/inbox' || location.pathname === '/prompts' || location.pathname === '/reserve') ? "p-0 overflow-hidden" : "p-4 overflow-y-auto"
+                        (location.pathname === '/' || location.pathname === '/library' || location.pathname === '/inbox' || location.pathname === '/prompts' || location.pathname === '/reserve' || location.pathname === '/censor') ? "p-0 overflow-hidden" : "p-4 overflow-y-auto"
                     )}>
                         {children}
                         {fragmentPanelOpen && (

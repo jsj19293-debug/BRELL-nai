@@ -29,6 +29,7 @@
     "check:storage-names": "node --experimental-strip-types scripts/check-storage-names.mjs",
     "check:seed-vault": "node --experimental-strip-types scripts/check-seed-vault.mjs",
     "check:web-split": "node --experimental-strip-types scripts/check-web-split.mjs",
+    "check:censor-review": "node --experimental-strip-types scripts/check-censor-review.mjs",
     "check:installer-continuity": "node scripts/check-installer-continuity.mjs",
     "check:model-capabilities": "node --experimental-strip-types scripts/check-model-capabilities.mjs",
     "check:tokenizer": "node scripts/check-tokenizer.mjs",

@@ -355,6 +355,7 @@
   },
   "nav": {
     "reserve": "Reserve",
+    "censor": "Censor",
     "prompts": "Prompts",
     "folders": "Folders",
     "inbox": "Inbox",

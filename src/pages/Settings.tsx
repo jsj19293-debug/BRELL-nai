@@ -111,6 +111,8 @@ export default function Settings() {
     const characterAssetScenesEnabled = useSettingsStore(state => state.characterAssetScenesEnabled)
     const sceneReservationEnabled = useSettingsStore(state => state.sceneReservationEnabled)
     const setSceneReservationEnabled = useSettingsStore(state => state.setSceneReservationEnabled)
+    const censorTabEnabled = useSettingsStore(state => state.censorTabEnabled)
+    const setCensorTabEnabled = useSettingsStore(state => state.setCensorTabEnabled)
     const setCharacterAssetScenesEnabled = useSettingsStore(state => state.setCharacterAssetScenesEnabled)
     const setBlurModeFeatureEnabled = useSettingsStore(state => state.setBlurModeFeatureEnabled)
     const koTranslateEnabled = useSettingsStore(state => state.koTranslateEnabled)
@@ -891,6 +893,15 @@ export default function Settings() {
                                         </span>
                                     </span>
                                     <Switch checked={sceneReservationEnabled} onChange={event => setSceneReservationEnabled(event.target.checked)} />
+                                </label>
+                                <label className="flex items-center justify-between gap-3 text-sm">
+                                    <span className="font-medium">
+                                        {t('settingsPage.censor.title', '검열 탭 사용')}
+                                        <span className="block text-xs font-normal text-muted-foreground">
+                                            {t('settingsPage.censor.help', '켜면 상단 메뉴의 예약과 스마트 툴 사이에 "검열" 탭이 생깁니다. 폴더의 이미지를 < > 키로 넘기며 검수하고, 칠한 이미지는 그 폴더 안의 "검열본" 폴더에 따로 저장합니다.')}
+                                        </span>
+                                    </span>
+                                    <Switch checked={censorTabEnabled} onChange={event => setCensorTabEnabled(event.target.checked)} />
                                 </label>
                             </div>
                         </section>

@@ -2,21 +2,20 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { open as openDialog } from '@tauri-apps/plugin-dialog'
-import { Film, FolderOpen, FolderPlus, Images, Link2, Link2Off, Loader2, RefreshCw, RotateCcw } from 'lucide-react'
+import { Film, FolderOpen, FolderPlus, Images, Link2, Link2Off, Loader2, RefreshCw, RotateCcw, ShieldCheck } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Tip } from '@/components/ui/tooltip'
 import { toast } from '@/components/ui/use-toast'
 import { cn } from '@/lib/utils'
 import { useSceneStore } from '@/stores/scene-store'
 import { useFolderStore } from '@/stores/folder-store'
+import { useCensorStore } from '@/stores/censor-store'
+import { useSettingsStore } from '@/stores/settings-store'
 import {
     createWorkFolder, listWorkFolders, openFolder, resolveScenePresetFolder, resolveWorkRoot, type WorkFolder,
 } from '@/lib/rell-folders'
 import { pathKey } from '@/lib/scene-folder-sync'
-
-const NO_WORK = '__none__'
 
 const formatDate = (ms: number) => (ms > 0 ? new Date(ms).toLocaleDateString() : '')
 
@@ -99,6 +98,13 @@ export default function FolderManager() {
         if (selected && typeof selected === 'string') setRootPath(selected)
     })
 
+    // 검열 탭으로 이 폴더를 연다 (탭이 꺼져 있으면 켠다).
+    const openInCensor = (path: string) => {
+        useSettingsStore.getState().setCensorTabEnabled(true)
+        useCensorStore.getState().setFolderPath(path)
+        navigate('/censor')
+    }
+
     const openInSceneMode = (presetId: string) => {
         setActivePreset(presetId)
         navigate('/scenes')
@@ -113,7 +119,7 @@ export default function FolderManager() {
                 <div className="min-w-0">
                     <h1 className="text-lg font-semibold">{t('folders.title', '폴더 관리자')}</h1>
                     <p className="text-xs text-muted-foreground">
-                        {t('folders.desc', '작품별 폴더를 만들고 씬 모드의 작품과 연결하세요. 연결한 폴더는 WebP 내보내기의 저장 위치가 됩니다.')}
+                        {t('folders.desc2', '작품별 폴더를 만들고 바로 엽니다. 폴더 오른쪽의 "검열"을 누르면 검열 탭에서 그 폴더의 이미지를 검수합니다.')}
                     </p>
                 </div>
                 <div className="flex min-w-0 items-center gap-1 rounded-xl border border-border/60 bg-muted/20 py-1 pl-3 pr-1">
@@ -250,30 +256,18 @@ export default function FolderManager() {
                                             </span>
                                         </span>
                                     </button>
-                                    <Select
-                                        value={linkedExists ? linkedPresetId : NO_WORK}
-                                        onValueChange={(value: string) => {
-                                            if (value === NO_WORK) {
-                                                if (linkedPresetId) unlinkFolder(linkedPresetId)
-                                            } else {
-                                                linkFolder(value, folder.path)
-                                            }
-                                        }}
-                                    >
-                                        <SelectTrigger className="h-8 w-44 shrink-0 text-xs" aria-label={t('folders.linkTo', '연결할 작품')}>
-                                            <span className="flex min-w-0 items-center gap-1.5">
-                                                {linkedExists ? <Link2 className="h-3.5 w-3.5 shrink-0 text-primary" /> : <Link2Off className="h-3.5 w-3.5 shrink-0 opacity-50" />}
-                                                <span className="truncate"><SelectValue /></span>
+                                    {linkedExists && (
+                                        <Tip content={t('folders.linkedTo', '씬 모드 작품 "{{name}}"의 WebP 내보내기 폴더', { name: presetName(linkedPresetId as string) ?? '' })}>
+                                            <span className="flex max-w-[9rem] shrink-0 items-center gap-1 text-xs text-muted-foreground">
+                                                <Link2 className="h-3.5 w-3.5 shrink-0 text-primary" />
+                                                <span className="truncate">{presetName(linkedPresetId as string)}</span>
                                             </span>
-                                        </SelectTrigger>
-                                        <SelectContent>
-                                            <SelectItem value={NO_WORK}>{t('folders.noLink', '연결 안 함')}</SelectItem>
-                                            {presets.map(preset => <SelectItem key={preset.id} value={preset.id}>{preset.name}</SelectItem>)}
-                                        </SelectContent>
-                                    </Select>
-                                    <Tip content={t('folders.openInScene', '씬 모드에서 이 작품 열기')}>
-                                        <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0" disabled={!linkedExists} onClick={() => linkedPresetId && openInSceneMode(linkedPresetId)}>
-                                            <Film className="h-4 w-4" />
+                                        </Tip>
+                                    )}
+                                    <Tip content={t('folders.censorTip', '검열 탭에서 이 폴더의 이미지를 넘기며 검수 · 수동검열합니다')}>
+                                        <Button variant="outline" size="sm" className="h-8 shrink-0 text-xs" data-folder-censor onClick={() => openInCensor(folder.path)}>
+                                            <ShieldCheck className="mr-1 h-3.5 w-3.5" />
+                                            {t('folders.censor', '검열')}
                                         </Button>
                                     </Tip>
                                 </li>
