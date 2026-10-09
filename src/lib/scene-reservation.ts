@@ -3,17 +3,17 @@
  * 캐릭터마다 레퍼런스를 쓸지 따로 정하고, 레퍼런스를 쓰는 캐릭터는 i2i가 반드시 뒤따른다.
  *
  * 저장 위치 (씬이 원래 저장되는 NAIS_Scene 아래):
- *   예약캐릭터/<캐릭터>/레퍼원본/<씬 이름>/   레퍼런스로 뽑은 원본
- *   예약캐릭터/<캐릭터>/I2I/<씬 이름>/        그 원본으로 돌린 i2i
- *   예약캐릭터/<캐릭터>/<씬 이름>/            레퍼런스 없이 뽑은 것
- * 씬 묶음을 여러 개 고르면 <캐릭터> 아래에 <묶음 이름> 폴더가 하나 더 들어간다.
+ *   예약대형/<캐릭터>_레퍼/<씬 이름>/   레퍼런스로 뽑은 원본
+ *   예약대형/<캐릭터>_I2I/<씬 이름>/    그 원본으로 돌린 i2i
+ *   예약대형/<캐릭터>/<씬 이름>/        레퍼런스 없이 뽑은 것
+ * 씬 묶음을 여러 개 골라도 묶음 폴더는 만들지 않는다. 씬 이름이 겹칠 때만 "(2)"를 붙인다.
  */
 import type { AssetPreset, AssetScene, CharacterAssetInfo } from './character-asset-presets.ts'
 import { assetCharacterName, resolveAssetSource } from './character-asset-presets.ts'
 
-export const RESERVATION_ROOT_FOLDER = '예약캐릭터'
-export const RESERVATION_REFERENCE_FOLDER = '레퍼원본'
-export const RESERVATION_I2I_FOLDER = 'I2I'
+export const RESERVATION_ROOT_FOLDER = '예약대형'
+export const RESERVATION_REFERENCE_SUFFIX = '_레퍼'
+export const RESERVATION_I2I_SUFFIX = '_I2I'
 export const RESERVATION_NAME_PREFIX = '[예약] '
 
 export type ReservationSeedMode = 'fixed' | 'random'
@@ -30,8 +30,13 @@ export interface ReservationRequest {
     presetIds: readonly string[]
     /** 묶음마다 앞에서부터 몇 번째 씬까지 뽑을지. null이면 전부. */
     sceneLimit: number | null
+    /** 레퍼런스 없는 캐릭터의 시드 방식 */
     seedMode: ReservationSeedMode
-    /** seedMode가 fixed일 때 쓸 시드 */
+    /** 레퍼런스 캐릭터의 원본(레퍼) 생성에 쓸 시드 방식. 지정하지 않으면 seedMode와 같다. */
+    referenceSeedMode?: ReservationSeedMode
+    /** 레퍼런스 캐릭터의 i2i에 쓸 시드 방식 */
+    i2iSeedMode: ReservationSeedMode
+    /** 고정일 때 쓸 시드 */
     fixedSeed: number
     /** 씬이 저장되는 NAIS_Scene 폴더의 전체 경로 */
     sceneBasePath: string
@@ -88,11 +93,19 @@ export function reservationI2iFolder(asset: CharacterAssetInfo | undefined, scen
     return name ? joinPath(asset.i2iFolderRoot, name) : null
 }
 
-/** 예약 프리셋이 정한 시드. 고정이면 그 값, 풀기면 'random', 예약 프리셋이 아니면 null (평소 설정을 따른다). */
-export function reservationSeed(asset: CharacterAssetInfo | undefined): number | 'random' | null {
+/**
+ * 예약 프리셋이 정한 시드. 고정이면 그 값, 풀기면 'random', 예약 프리셋이 아니면 null (평소 설정을 따른다).
+ * pass가 'i2i'면 i2i용 설정(i2iSeedMode)을 본다.
+ */
+export function reservationSeed(asset: CharacterAssetInfo | undefined, pass: 'first' | 'i2i' = 'first'): number | 'random' | null {
     if (!asset?.reservation) return null
-    if (asset.seedMode === 'fixed' && (asset.fixedSeed ?? 0) > 0) return asset.fixedSeed as number
+    const mode = pass === 'i2i' ? asset.i2iSeedMode : asset.seedMode
+    if (mode === 'fixed' && (asset.fixedSeed ?? 0) > 0) return asset.fixedSeed as number
     return 'random'
+}
+
+export function randomSeed(): number {
+    return Math.floor(Math.random() * 4294967294) + 1
 }
 
 /**
@@ -111,7 +124,6 @@ export function planReservation<Scene extends AssetScene, Preset extends AssetPr
         const source = resolveAssetSource(presets, presetId)
         if (source && !source.characterAsset && !sources.some(item => item.id === source.id)) sources.push(source)
     }
-    const multipleSets = sources.length > 1
     const limit = clampSceneLimit(request.sceneLimit)
     const next = [...presets]
     const takenNames = new Set(presets.map(preset => preset.name.toLocaleLowerCase()))
@@ -125,7 +137,18 @@ export function planReservation<Scene extends AssetScene, Preset extends AssetPr
         const characterName = assetCharacterName(character.name, index)
         const referenceIds = [...new Set(character.referenceIds)]
         const usesReference = referenceIds.length > 0
-        const characterFolder = joinPath(request.sceneBasePath, RESERVATION_ROOT_FOLDER, safeName(characterName, '캐릭터'))
+        const characterFolderName = safeName(characterName, '캐릭터')
+        const rootFolder = joinPath(request.sceneBasePath, RESERVATION_ROOT_FOLDER)
+        const firstPassRoot = joinPath(rootFolder, usesReference ? `${characterFolderName}${RESERVATION_REFERENCE_SUFFIX}` : characterFolderName)
+        const i2iRoot = joinPath(rootFolder, `${characterFolderName}${RESERVATION_I2I_SUFFIX}`)
+        // 이 캐릭터 폴더에 이미 있는 씬 폴더 이름 (이전 예약 포함): 다른 묶음의 같은 이름 씬과 섞이지 않게 한다.
+        const takenFolders = new Set<string>()
+        for (const preset of next) {
+            if (!preset.characterAsset?.reservation || preset.characterAsset.characterPromptId !== character.id) continue
+            for (const scene of preset.scenes) {
+                if (scene.folderPath) takenFolders.add(lastSegment(scene.folderPath).toLocaleLowerCase())
+            }
+        }
 
         for (const source of sources) {
             const existingIndex = next.findIndex(preset =>
@@ -165,11 +188,9 @@ export function planReservation<Scene extends AssetScene, Preset extends AssetPr
                 continue
             }
 
-            const setFolder = multipleSets ? joinPath(characterFolder, safeName(source.name, '작품')) : characterFolder
-            const firstPassRoot = usesReference ? joinPath(setFolder, RESERVATION_REFERENCE_FOLDER) : setFolder
+            const firstPassSeedMode = usesReference ? (request.referenceSeedMode ?? request.seedMode) : request.seedMode
             const presetId = makeId(created++)
             const picked = limit === null ? source.scenes : source.scenes.slice(0, limit)
-            const takenFolders = new Set<string>()
             const scenes = picked.map((scene, sceneIndex) => {
                 const base = safeName(scene.name, `씬 ${sceneIndex + 1}`)
                 let folderName = base
@@ -204,9 +225,9 @@ export function planReservation<Scene extends AssetScene, Preset extends AssetPr
                     characterName,
                     referenceIds,
                     reservation: true,
-                    seedMode: request.seedMode,
-                    ...(request.seedMode === 'fixed' ? { fixedSeed: clampSeed(request.fixedSeed) } : {}),
-                    ...(usesReference ? { i2iCycle: true, i2iFolderRoot: joinPath(setFolder, RESERVATION_I2I_FOLDER) } : {}),
+                    seedMode: firstPassSeedMode,
+                    ...(firstPassSeedMode === 'fixed' || (usesReference && request.i2iSeedMode === 'fixed') ? { fixedSeed: clampSeed(request.fixedSeed) } : {}),
+                    ...(usesReference ? { i2iCycle: true, i2iSeedMode: request.i2iSeedMode, i2iFolderRoot: i2iRoot } : {}),
                 },
             } as Preset
             // 같은 캐릭터의 예약끼리 모이게 넣는다.

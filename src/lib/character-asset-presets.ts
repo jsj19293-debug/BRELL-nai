@@ -16,6 +16,8 @@ export interface CharacterAssetInfo {
     reservation?: boolean
     /** 예약: 시드를 고정할지 풀지 */
     seedMode?: 'fixed' | 'random'
+    /** 예약: 레퍼런스 캐릭터의 i2i 시드를 고정할지 풀지 */
+    i2iSeedMode?: 'fixed' | 'random'
     fixedSeed?: number
     /** 예약: i2i 이미지를 저장할 폴더 (이 아래에 씬 이름 폴더가 생긴다) */
     i2iFolderRoot?: string
@@ -296,4 +298,14 @@ export function characterAssetProgress<Preset extends AssetPreset>(
 
 export function progressPercent(done: number, total: number): number {
     return total > 0 ? Math.min(100, Math.round((done / total) * 100)) : 0
+}
+
+/** 캐릭터씬의 고정 동작(그 캐릭터만, 고른 레퍼런스만 등)을 적용할지: 예약 프리셋은 예약 기능 스위치, 나머지는 캐릭터 에셋 스위치를 따른다. */
+export function assetBehaviourEnabled(
+    preset: Pick<AssetPreset, 'characterAsset'> | null | undefined,
+    switches: { characterAssetScenesEnabled: boolean; sceneReservationEnabled: boolean },
+): boolean {
+    const asset = preset?.characterAsset
+    if (!asset) return false
+    return asset.reservation ? switches.sceneReservationEnabled : switches.characterAssetScenesEnabled
 }

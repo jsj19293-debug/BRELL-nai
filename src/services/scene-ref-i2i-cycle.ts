@@ -11,7 +11,8 @@ import { toast } from '@/components/ui/use-toast'
 import { useSceneStore, type SceneCharacterSequenceEntry } from '@/stores/scene-store'
 import { useSettingsStore } from '@/stores/settings-store'
 import { calculateGenerationDelay } from '@/lib/generation-delay'
-import { presetWantsI2iCycle } from '@/lib/character-asset-presets'
+import { assetBehaviourEnabled, presetWantsI2iCycle } from '@/lib/character-asset-presets'
+import { randomSeed, reservationI2iFolder, reservationSeed } from '@/lib/scene-reservation'
 import { generateSceneImage, type SceneImageSavedInfo } from '@/services/scene-generation'
 import {
     beginCycle,
@@ -45,7 +46,7 @@ export function ensureSceneI2iCycle(sessionId: number): void {
     const settings = useSettingsStore.getState()
     const scenes = useSceneStore.getState()
     const preset = scenes.presets.find(candidate => candidate.id === scenes.activePresetId)
-    cycle = beginCycle(cycle, sessionId, presetWantsI2iCycle(settings.sceneRefI2iCycleEnabled, preset, settings.characterAssetScenesEnabled))
+    cycle = beginCycle(cycle, sessionId, presetWantsI2iCycle(settings.sceneRefI2iCycleEnabled, preset, assetBehaviourEnabled(preset, settings)))
     showPhase(cycle.phase)
 }
 
@@ -106,6 +107,11 @@ export async function runSceneI2iSecondPass(sessionId: number, presetId: string)
         }),
     })
 
+    const cyclePreset = useSceneStore.getState().presets.find(preset => preset.id === presetId)
+    const reservationAsset = cyclePreset?.characterAsset?.reservation && assetBehaviourEnabled(cyclePreset, useSettingsStore.getState())
+        ? cyclePreset.characterAsset
+        : undefined
+
     let outcome: SecondPassOutcome = 'done'
     try {
         for (let index = 0; index < steps.length; index++) {
@@ -124,6 +130,12 @@ export async function runSceneI2iSecondPass(sessionId: number, presetId: string)
                 continue
             }
 
+            // 예약대형: i2i 시드(고정/랜덤)와 저장 폴더(<캐릭터>_I2I/<씬>)는 예약할 때 정한 대로.
+            // 그 밖에는 1단계와 같은 시드로, 씬의 폴더에 저장한다.
+            const reservedI2iSeed = reservationAsset ? reservationSeed(reservationAsset, 'i2i') : null
+            const i2iSeed = reservedI2iSeed === 'random' ? randomSeed() : typeof reservedI2iSeed === 'number' ? reservedI2iSeed : record.seed
+            const i2iFolder = reservationI2iFolder(reservationAsset, scene.folderPath)
+
             setStreamingData(scene.id, null, 0)
             let attempts = 0
             for (;;) {
@@ -136,10 +148,11 @@ export async function runSceneI2iSecondPass(sessionId: number, presetId: string)
                             sourceImage,
                             strength,
                             noise,
-                            seed: record.seed,
+                            seed: i2iSeed,
                             characterPromptIds: record.characterPromptIds,
                             disableVibes,
                         },
+                        ...(i2iFolder ? { saveFolder: i2iFolder } : {}),
                     })
                     break
                 } catch (error) {

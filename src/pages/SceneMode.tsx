@@ -636,6 +636,11 @@ export default function SceneMode() {
 
     const [showExportDialog, setShowExportDialog] = useState(false)
     const [showWebpExportDialog, setShowWebpExportDialog] = useState(false)
+    // 예약대형으로 만든 프리셋은 예약 탭에서 본다. 씬 모드 목록에는 넣지 않는다 (지금 열려 있는 경우만 예외).
+    const visiblePresets = useMemo(
+        () => presets.filter(preset => !preset.characterAsset?.reservation || preset.id === activePresetId),
+        [presets, activePresetId],
+    )
     // 캐릭터씬이면 그 캐릭터와 진행 상황을 도구 모음에 보여준다.
     const characterProgress = useMemo(() => {
         if (!activePreset?.characterAsset) return null
@@ -967,7 +972,7 @@ export default function SceneMode() {
                             />
                         ) : (
                             <ScenePresetDropdown
-                                presets={presets}
+                                presets={visiblePresets}
                                 activePresetId={activePresetId}
                                 open={presetSelectOpen}
                                 onOpenChange={setPresetSelectOpen}
@@ -975,7 +980,12 @@ export default function SceneMode() {
                                     setActivePreset(value)
                                     setPresetSelectOpen(false)
                                 }}
-                                onReorder={reorderPresets}
+                                onReorder={(oldIndex, newIndex) => {
+                                    // 목록에서 감춘 예약 프리셋이 있어도 전체 목록 기준의 위치로 옮긴다.
+                                    const from = presets.findIndex(preset => preset.id === visiblePresets[oldIndex]?.id)
+                                    const to = presets.findIndex(preset => preset.id === visiblePresets[newIndex]?.id)
+                                    if (from >= 0 && to >= 0) reorderPresets(from, to)
+                                }}
                                 newPresetName={newPresetName}
                                 onNewPresetNameChange={setNewPresetName}
                                 onAddPreset={handleAddPreset}

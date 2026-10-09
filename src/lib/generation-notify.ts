@@ -30,7 +30,15 @@ export function playDoneSound(): void {
     }
 }
 
-export function notifyGenerationDone(title: string, body: string): void {
+let suppressed = false
+
+/** 예약대형처럼 여러 묶음을 이어서 돌릴 때, 묶음 하나가 끝날 때마다 울리지 않게 잠시 끈다. */
+export function setGenerationNotifySuppressed(value: boolean): void {
+    suppressed = value
+}
+
+export function notifyGenerationDone(title: string, body: string, options: { force?: boolean } = {}): void {
+    if (suppressed && !options.force) return
     const { generationDoneNotify, generationDoneSound } = useSettingsStore.getState()
     if (generationDoneNotify) void sendSystemNotification(title, body)
     if (generationDoneSound) playDoneSound()

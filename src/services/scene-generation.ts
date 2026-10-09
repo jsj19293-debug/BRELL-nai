@@ -10,7 +10,8 @@ import { pictureDir, join } from '@tauri-apps/api/path'
 import { buildGenerationRequest } from '@/lib/generation-request'
 import { getModelCapabilities } from '@/lib/model-capabilities'
 import { useCharacterStore } from '@/stores/character-store'
-import { resolveCharacterAssetOverride } from '@/lib/character-asset-presets'
+import { assetBehaviourEnabled, resolveCharacterAssetOverride } from '@/lib/character-asset-presets'
+import { randomSeed, reservationSeed } from '@/lib/scene-reservation'
 import { logGeneratedImage } from '@/services/work-log-service'
 import { getRandomCharacterCandidates, pickRandomCharacters } from '@/lib/random-character-selection'
 import { SCENE_IMAGE_GENERATED_EVENT } from '@/lib/scene-review-generation'
@@ -53,6 +54,8 @@ export async function generateSceneImage(options: {
     settings?: RemoteGenerationSettings; draft?: RemoteSceneDraft;
     workspace?: RemoteResolvedWorkspace;
     secondPass?: SceneSecondPassOptions;
+    /** 이 이미지만 저장할 폴더 (지정하지 않으면 씬의 폴더) */
+    saveFolder?: string;
     onSaved?: (info: SceneImageSavedInfo) => void;
 }): Promise<string | undefined> {
     const { scene, presetId: activePresetId, sequenceEntry = null } = options
@@ -115,10 +118,12 @@ export async function generateSceneImage(options: {
         ).map(character => character.id)
         : null
     // 캐릭터씬(캐릭터 에셋 뽑기로 만든 프리셋)은 그 캐릭터 하나와, 만들 때 고른 레퍼런스만 쓴다.
-    const characterAssetOverride = !sequenceMode && !options.draft
+    const assetPreset = latestSceneStore.presets.find(preset => preset.id === activePresetId)
+    const assetBehaviour = !sequenceMode && !options.draft && assetBehaviourEnabled(assetPreset, latestSettingsStore)
+    const characterAssetOverride = assetBehaviour
         ? resolveCharacterAssetOverride(
-            latestSceneStore.presets.find(preset => preset.id === activePresetId),
-            latestSettingsStore.characterAssetScenesEnabled,
+            assetPreset,
+            true,
             latestPromptStore.characters.map(character => character.id),
             referenceState.characterImages.map(image => image.id),
         )
@@ -214,6 +219,10 @@ export async function generateSceneImage(options: {
     if (finalSeed === 0) {
         finalSeed = Math.floor(Math.random() * 4294967295)
     }
+    // 예약대형: 예약할 때 정한 시드 방식(고정 값 또는 씬마다 랜덤)이 메인의 시드 설정보다 앞선다.
+    const reservedSeed = assetBehaviour ? reservationSeed(assetPreset?.characterAsset) : null
+    if (reservedSeed === 'random') finalSeed = randomSeed()
+    else if (typeof reservedSeed === 'number') finalSeed = reservedSeed
     if (secondPass && secondPass.seed > 0) finalSeed = secondPass.seed
 
     // Helper function to round to nearest multiple of 64 (NovelAI requirement)
@@ -369,11 +378,21 @@ export async function generateSceneImage(options: {
             const { useAbsolutePath } = useSettingsStore.getState()
             let fullPath: string
             let sceneFolderPath: string
+            // 예약대형은 정해 둔 폴더에 저장한다: 아직 없으면 만든다 (없다고 기본 위치로 새지 않게).
+            if (assetBehaviour && assetPreset?.characterAsset?.reservation && scene.folderPath && !options.saveFolder) {
+                await mkdir(scene.folderPath, { recursive: true })
+            }
             const existingSceneFolderPath = scene.folderPath && await exists(scene.folderPath)
                 ? scene.folderPath
                 : null
 
-            if (existingSceneFolderPath) {
+            if (options.saveFolder) {
+                // 이 한 장만 다른 폴더에 저장한다 (예약대형의 i2i). 씬이 기억하는 폴더는 바꾸지 않는다.
+                await mkdir(options.saveFolder, { recursive: true })
+                fullPath = await join(options.saveFolder, fileName)
+                await writeFile(fullPath, binaryData)
+                sceneFolderPath = scene.folderPath || options.saveFolder
+            } else if (existingSceneFolderPath) {
                 sceneFolderPath = existingSceneFolderPath
                 fullPath = await join(sceneFolderPath, fileName)
                 await writeFile(fullPath, binaryData)

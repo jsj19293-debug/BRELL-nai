@@ -354,6 +354,7 @@
     "charRefWarning": "Character Reference detected. Extraction supported via Director Tools."
   },
   "nav": {
+    "reserve": "Reserve",
     "prompts": "Prompts",
     "folders": "Folders",
     "inbox": "Inbox",

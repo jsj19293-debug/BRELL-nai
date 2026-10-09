@@ -9,6 +9,7 @@ import { flushScenePromptDrafts } from '@/lib/scene-prompt-drafts'
 import { getSceneFolderFromImages, replaceSceneFolderPrefix, replaceSceneFolderPrefixes, sanitizeSceneFolderName } from '@/lib/scene-path'
 import { getUniqueDuplicateName } from '@/lib/scene-copy-name'
 import { planCharacterAssetPresets, type AssetCharacter, type CharacterAssetInfo } from '@/lib/character-asset-presets'
+import { planReservation, type ReservationJob, type ReservationRequest } from '@/lib/scene-reservation'
 import { createHistoryIndexScope, moveHistoryIndexPathPrefix } from '@/lib/history-index'
 import { normalizeCostumePromptMarkersForExport } from '@/lib/costume-prompt'
 import { buildSceneQueueOrder, findNextQueuedSceneIndex } from '@/lib/scene-queue-order'
@@ -193,6 +194,8 @@ interface SceneState {
     // Actions - Presets
     addPreset: (name: string) => void
     duplicatePreset: (id: string) => void
+    /** 예약대형: 계획을 세워 프리셋으로 만들고(또는 이어서 예약하고) 실행 순서대로 작업 목록을 돌려준다. */
+    createReservation: (request: ReservationRequest) => ReservationJob[]
     /** 고른 작품들의 씬 전체를 캐릭터 이름으로 복제한다. 만든 프리셋 id와 건너뛴 이름을 돌려준다. */
     createCharacterAssetPresets: (
         sourcePresetIds: string[],
@@ -451,6 +454,19 @@ export const useSceneStore = create<SceneState>()(
                 )
                 if (plan.created.length > 0) set({ presets: plan.presets })
                 return { createdIds: plan.created.map(preset => preset.id), skipped: plan.skipped }
+            },
+
+            createReservation: (request) => {
+                flushScenePromptDrafts()
+                const stamp = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+                const plan = planReservation<SceneCard, ScenePreset>(
+                    get().presets,
+                    request,
+                    index => `scene-preset-reserve-${stamp}-${index}`,
+                    Date.now(),
+                )
+                if (plan.jobs.length > 0) set({ presets: plan.presets })
+                return plan.jobs
             },
 
             duplicatePreset: (presetId) => {

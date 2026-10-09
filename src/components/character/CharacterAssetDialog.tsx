@@ -63,7 +63,7 @@ export function CharacterAssetDialog({ open, onOpenChange }: CharacterAssetDialo
     const [queueCount, setQueueCount] = useState(1)
     const [i2iCycle, setI2iCycle] = useState(false)
     const [tab, setTab] = useState<'create' | 'progress'>('create')
-    const progress = useMemo(() => characterAssetProgress(presets), [presets])
+    const progress = useMemo(() => characterAssetProgress(presets, 'asset'), [presets])
 
     // 열 때: 지금 켜져 있는 캐릭터 · 레퍼런스와, 보고 있는 작품을 미리 골라 둔다.
     useEffect(() => {

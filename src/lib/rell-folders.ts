@@ -62,6 +62,13 @@ export async function createWorkFolder(root: string, name: string): Promise<stri
     return path
 }
 
+/** 씬 이미지가 저장되는 최상위 폴더: <저장 위치>/NAIS_Scene */
+export async function resolveSceneBaseFolder(): Promise<string> {
+    const { savePath, useAbsolutePath } = useSettingsStore.getState()
+    const base = useAbsolutePath && savePath ? savePath : await pictureDir()
+    return join(base, 'NAIS_Scene')
+}
+
 /** 씬 이미지가 저장되는 원본 폴더 위치: <저장 위치>/NAIS_Scene/<작품 이름> */
 export async function resolveScenePresetFolder(presetName: string): Promise<string> {
     const { savePath, useAbsolutePath } = useSettingsStore.getState()

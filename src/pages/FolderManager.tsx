@@ -27,7 +27,9 @@ const formatDate = (ms: number) => (ms > 0 ? new Date(ms).toLocaleDateString() :
 export default function FolderManager() {
     const { t } = useTranslation()
     const navigate = useNavigate()
-    const presets = useSceneStore(state => state.presets)
+    const allPresets = useSceneStore(state => state.presets)
+    // 예약대형으로 만든 것은 예약 탭에서 관리한다.
+    const presets = useMemo(() => allPresets.filter(preset => !preset.characterAsset?.reservation), [allPresets])
     const setActivePreset = useSceneStore(state => state.setActivePreset)
     const configuredRoot = useFolderStore(state => state.rootPath)
     const links = useFolderStore(state => state.links)

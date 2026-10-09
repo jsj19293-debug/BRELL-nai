@@ -107,6 +107,8 @@ export default function Settings() {
     const generationDoneSound = useSettingsStore(state => state.generationDoneSound)
     const setGenerationDoneAlerts = useSettingsStore(state => state.setGenerationDoneAlerts)
     const characterAssetScenesEnabled = useSettingsStore(state => state.characterAssetScenesEnabled)
+    const sceneReservationEnabled = useSettingsStore(state => state.sceneReservationEnabled)
+    const setSceneReservationEnabled = useSettingsStore(state => state.setSceneReservationEnabled)
     const setCharacterAssetScenesEnabled = useSettingsStore(state => state.setCharacterAssetScenesEnabled)
     const setBlurModeFeatureEnabled = useSettingsStore(state => state.setBlurModeFeatureEnabled)
     const koTranslateEnabled = useSettingsStore(state => state.koTranslateEnabled)
@@ -878,6 +880,15 @@ export default function Settings() {
                                         </span>
                                     </span>
                                     <Switch checked={characterAssetScenesEnabled} onChange={event => setCharacterAssetScenesEnabled(event.target.checked)} />
+                                </label>
+                                <label className="flex items-center justify-between gap-3 text-sm">
+                                    <span className="font-medium">
+                                        {t('settingsPage.reservation.title', '예약대형 탭 사용')}
+                                        <span className="block text-xs font-normal text-muted-foreground">
+                                            {t('settingsPage.reservation.help', '켜면 상단 메뉴의 씬 모드 오른쪽에 "예약" 탭이 생깁니다. 여러 캐릭터와 씬 묶음을 한 번에 예약해 차례로 자동 생성하고, 결과도 그 탭에서 봅니다.')}
+                                        </span>
+                                    </span>
+                                    <Switch checked={sceneReservationEnabled} onChange={event => setSceneReservationEnabled(event.target.checked)} />
                                 </label>
                             </div>
                         </section>

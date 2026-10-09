@@ -75,6 +75,8 @@ interface SettingsState {
     generationDoneSound: boolean
     /** 캐릭터 에셋 뽑기(캐릭터씬) 기능 사용 */
     characterAssetScenesEnabled: boolean
+    /** 예약대형(여러 캐릭터 × 씬 묶음 자동 생성) 탭 사용 */
+    sceneReservationEnabled: boolean
 
     // 씬 모드 "레퍼런스 → i2i" 자동 싸이클
     sceneRefI2iCycleEnabled: boolean
@@ -165,6 +167,7 @@ interface SettingsState {
     setDeeplApiKey: (key: string) => void
     setGenerationDoneAlerts: (config: Partial<Pick<SettingsState, 'generationDoneNotify' | 'generationDoneSound'>>) => void
     setCharacterAssetScenesEnabled: (enabled: boolean) => void
+    setSceneReservationEnabled: (enabled: boolean) => void
     setSceneRefI2iCycle: (config: Partial<Pick<SettingsState, 'sceneRefI2iCycleEnabled' | 'sceneRefI2iStrength' | 'sceneRefI2iNoise' | 'sceneRefI2iDisableVibes'>>) => void
     setLibraryPath: (path: string, useAbsolute?: boolean) => void
     setImageFormat: (format: 'png' | 'webp') => void
@@ -233,6 +236,7 @@ export const useSettingsStore = create<SettingsState>()(
             generationDoneNotify: true,
             generationDoneSound: false,
             characterAssetScenesEnabled: true,
+            sceneReservationEnabled: false,
             sceneRefI2iCycleEnabled: false,
             sceneRefI2iStrength: SCENE_I2I_DEFAULT_STRENGTH,
             sceneRefI2iNoise: 0,
@@ -338,6 +342,7 @@ export const useSettingsStore = create<SettingsState>()(
             setDeeplApiKey: (key) => set({ deeplApiKey: key.trim() }),
             setGenerationDoneAlerts: (config) => set(config),
             setCharacterAssetScenesEnabled: (characterAssetScenesEnabled) => set({ characterAssetScenesEnabled }),
+            setSceneReservationEnabled: (sceneReservationEnabled) => set({ sceneReservationEnabled }),
             setSceneRefI2iCycle: (config) => set({
                 ...config,
                 ...(config.sceneRefI2iStrength === undefined ? {} : { sceneRefI2iStrength: clampSceneI2iStrength(config.sceneRefI2iStrength) }),
