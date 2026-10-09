@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import {
     SCENE_I2I_DEFAULT_STRENGTH, beginCycle, bytesToDataUrl, clampSceneI2iNoise, clampSceneI2iStrength,
-    idleCycleState, imageMimeForPath, planSecondPass, recordFirstPass, shouldRunSecondPass,
+    idleCycleState, imageMimeForPath, latestImagePerScene, planSecondPass, recordFirstPass, shouldRunSecondPass,
 } from '../src/lib/scene-i2i-cycle.ts'
 
 // 변화 강도: 기본 0.58, 0.01~0.99, 소수 둘째 자리
@@ -79,5 +79,19 @@ const url = bytesToDataUrl(big, 'image/png')
 assert.ok(url.startsWith('data:image/png;base64,'))
 assert.deepEqual(new Uint8Array(Buffer.from(url.split(',')[1], 'base64')), big)
 assert.equal(bytesToDataUrl(new Uint8Array(), 'image/webp'), 'data:image/webp;base64,')
+
+// "I2I로 변형": 씬마다 가장 최근 이미지 1장 (없는 씬은 빠지고, 저장 안 된 미리보기는 쓰지 않는다)
+assert.deepEqual(latestImagePerScene([
+    { id: 'a', images: [{ url: 'C:/a/1.png', timestamp: 10 }, { url: 'C:/a/3.png', timestamp: 30 }, { url: 'C:/a/2.png', timestamp: 20 }] },
+    { id: 'b', images: [] },
+    { id: 'c', images: [{ url: 'C:/c/1.png', timestamp: 5 }, { url: 'data:image/png;base64,AAAA', timestamp: 99 }] },
+    { id: 'd', images: [{ url: 'data:image/png;base64,AAAA', timestamp: 1 }] },
+]), [{ sceneId: 'a', path: 'C:/a/3.png' }, { sceneId: 'c', path: 'C:/c/1.png' }])
+// 그 기록은 평소의 2단계 계획에 그대로 들어간다
+{
+    const state = { sessionId: 7, enabled: true, phase: 'first', records: [{ sceneId: 'a', path: 'C:/a/3.png', seed: 0, sequenceEntry: null }] }
+    assert.equal(shouldRunSecondPass(state, 7), true)
+    assert.deepEqual(planSecondPass(state.records, [{ id: 'a' }, { id: 'b' }]).map(step => [step.scene.id, step.record.path, step.record.characterPromptIds]), [['a', 'C:/a/3.png', undefined]])
+}
 
 console.log('Scene reference → i2i cycle checks passed.')

@@ -1,6 +1,7 @@
 // 씬 모드 도구 모음: "레퍼런스 → i2i" 자동 싸이클 스위치와 설정.
 import { useTranslation } from 'react-i18next'
-import { Repeat2, SlidersHorizontal } from 'lucide-react'
+import { useState } from 'react'
+import { Repeat2, SlidersHorizontal, WandSparkles } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { Switch } from '@/components/ui/switch'
@@ -8,7 +9,10 @@ import { Slider } from '@/components/ui/slider'
 import { Tip } from '@/components/ui/tooltip'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { useSettingsStore } from '@/stores/settings-store'
-import { useSceneI2iCycleStatus } from '@/services/scene-ref-i2i-cycle'
+import { countSceneI2iConvertTargets, startSceneI2iConvert, useSceneI2iCycleStatus } from '@/services/scene-ref-i2i-cycle'
+import { useSceneStore } from '@/stores/scene-store'
+import { ConfirmDialog } from '@/components/ui/confirm-dialog'
+import { toast } from '@/components/ui/use-toast'
 import { SCENE_I2I_MAX_STRENGTH, SCENE_I2I_MIN_STRENGTH } from '@/lib/scene-i2i-cycle'
 
 export function SceneRefI2iCycleControl({ isGenerating }: { isGenerating: boolean }) {
@@ -22,6 +26,30 @@ export function SceneRefI2iCycleControl({ isGenerating }: { isGenerating: boolea
     const done = useSceneI2iCycleStatus(state => state.done)
     const total = useSceneI2iCycleStatus(state => state.total)
 
+    const activePresetId = useSceneStore(state => state.activePresetId)
+    const [convertCount, setConvertCount] = useState<number | null>(null)
+
+    // "I2I로 변형": 씬마다 가장 최근 이미지 1장을 I2I로 한 번씩 돌린다.
+    const askConvert = () => {
+        const count = countSceneI2iConvertTargets(activePresetId)
+        if (count === 0) {
+            toast({ title: t('sceneI2iCycle.convertEmpty', '변형할 이미지가 없습니다'), description: t('sceneI2iCycle.convertEmptyHelp', '이 작품의 씬에 저장된 이미지가 있어야 합니다.') })
+            return
+        }
+        setConvertCount(count)
+    }
+    const runConvert = () => {
+        if (!activePresetId) return
+        const outcome = startSceneI2iConvert(activePresetId)
+        if (outcome === 'queued') {
+            toast({ title: t('sceneI2iCycle.convertQueued', '예약된 씬이 남아 있습니다'), description: t('sceneI2iCycle.convertQueuedHelp', '예약을 먼저 생성하거나 비운 뒤에 눌러 주세요.'), variant: 'destructive' })
+        } else if (outcome === 'busy') {
+            toast({ title: t('sceneI2iCycle.convertBusy', '다른 생성이 진행 중입니다'), variant: 'destructive' })
+        } else if (outcome === 'empty') {
+            toast({ title: t('sceneI2iCycle.convertEmpty', '변형할 이미지가 없습니다') })
+        }
+    }
+
     const running = isGenerating && phase !== 'idle'
     const status = !running
         ? null
@@ -30,6 +58,21 @@ export function SceneRefI2iCycleControl({ isGenerating }: { isGenerating: boolea
             : t('sceneI2iCycle.phaseSecond', '2단계 · i2i {{done}}/{{total}}', { done, total })
 
     return (
+        <>
+        <Tip content={t('sceneI2iCycle.convertTooltip', '지금 있는 이미지를 I2I로 변형: 씬마다 가장 최근 이미지 1장씩, 레퍼런스 없이 I2I로 한 장 더 생성합니다 (변화 강도는 옆의 싸이클 설정을 따름)')}>
+            <Button variant="outline" className="h-10 rounded-xl border-white/10 bg-white/5 px-3 text-xs" disabled={isGenerating || !activePresetId} onClick={askConvert} data-scene-i2i-convert>
+                <WandSparkles className="mr-1.5 h-4 w-4" />
+                {t('sceneI2iCycle.convert', 'I2I로 변형')}
+            </Button>
+        </Tip>
+        <ConfirmDialog
+            open={convertCount !== null}
+            onOpenChange={(open: boolean) => { if (!open) setConvertCount(null) }}
+            title={t('sceneI2iCycle.convertConfirmTitle', '이 작품의 이미지를 I2I로 변형할까요?')}
+            description={t('sceneI2iCycle.convertConfirmBody', '씬 {{n}}개에서 가장 최근 이미지 1장씩을 원본으로 I2I를 {{n}}장 생성합니다. 변화 강도 {{strength}}, 캐릭터 레퍼런스는 쓰지 않습니다. 원본은 그대로 두고 같은 씬에 새 이미지로 추가됩니다.', { n: convertCount ?? 0, strength: strength.toFixed(2) })}
+            confirmText={t('sceneI2iCycle.convertConfirm', '변형 시작')}
+            onConfirm={runConvert}
+        />
         <Tip content={t('sceneI2iCycle.tooltip', '레퍼런스로 전체 생성 → 끝나면 레퍼런스를 끄고 각 이미지를 i2i로 한 번 더 생성')}>
             <div className={cn(
                 'flex items-center gap-2 rounded-xl border border-white/10 px-2 h-10 bg-white/5',
@@ -125,5 +168,6 @@ export function SceneRefI2iCycleControl({ isGenerating }: { isGenerating: boolea
                 </Popover>
             </div>
         </Tip>
+        </>
     )
 }

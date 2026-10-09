@@ -21,6 +21,7 @@ import {
     clampSceneI2iStrength,
     idleCycleState,
     imageMimeForPath,
+    latestImagePerScene,
     planSecondPass,
     recordFirstPass,
     shouldRunSecondPass,
@@ -30,6 +31,8 @@ import {
 
 type Entry = SceneCharacterSequenceEntry
 let cycle: SceneI2iCycleState<Entry> = idleCycleState<Entry>()
+/** 이번 세션이 "I2I로 변형"(이미 있던 이미지를 I2I로만 돌리기)인지 */
+let convertSessionId: number | null = null
 
 /** 화면 표시용 진행 상태 (저장하지 않는다) */
 export const useSceneI2iCycleStatus = create<{ phase: SceneI2iCyclePhase; done: number; total: number }>(() => ({
@@ -71,6 +74,38 @@ const stillRunning = (sessionId: number): boolean => {
 }
 const sleep = (ms: number): Promise<void> => new Promise(resolve => setTimeout(resolve, ms))
 
+/** 지금 "I2I로 변형"할 수 있는 이미지 수 (씬마다 가장 최근 1장) */
+export function countSceneI2iConvertTargets(presetId: string | null): number {
+    const preset = useSceneStore.getState().presets.find(candidate => candidate.id === presetId)
+    return preset ? latestImagePerScene(preset.scenes).length : 0
+}
+
+/**
+ * "I2I로 변형": 레퍼런스를 썼든 안 썼든, 씬마다 가장 최근 이미지 1장을 원본으로 삼아 레퍼런스 없는 I2I를 한 장씩 만든다.
+ * 새로 1단계를 뽑지 않고, 평소의 2단계(I2I) 실행부를 그대로 쓴다: 취소 · 진행 표시 · 저장 폴더 규칙이 같다.
+ */
+export function startSceneI2iConvert(presetId: string): 'started' | 'busy' | 'queued' | 'empty' {
+    const scenes = useSceneStore.getState()
+    if (scenes.isGenerating || scenes.activePresetId !== presetId) return 'busy'
+    // 예약이 남아 있으면 그것부터 새로 뽑게 되므로 섞이지 않게 막는다.
+    if (scenes.getTotalQueueCount(presetId) > 0) return 'queued'
+    const preset = scenes.presets.find(candidate => candidate.id === presetId)
+    const picks = preset ? latestImagePerScene(preset.scenes) : []
+    if (picks.length === 0) return 'empty'
+
+    const sessionId = scenes.startNewGenerationSession()
+    convertSessionId = sessionId
+    // 시드 0 = 따로 정하지 않음: 씬에 고정한 시드가 있으면 그것, 없으면 메인의 시드 설정을 따른다.
+    cycle = {
+        sessionId,
+        enabled: true,
+        phase: 'first',
+        records: picks.map(pick => ({ sceneId: pick.sceneId, path: pick.path, seed: 0, sequenceEntry: null })),
+    }
+    showPhase('second', 0, picks.length)
+    return 'started'
+}
+
 export type SecondPassOutcome = 'skipped' | 'done' | 'cancelled' | 'failed'
 
 /**
@@ -99,7 +134,13 @@ export async function runSceneI2iSecondPass(sessionId: number, presetId: string)
 
     showPhase('second', 0, steps.length)
     setGenerationProgress(0, steps.length)
-    toast({
+    toast(convertSessionId === sessionId ? {
+        title: t('sceneI2iCycle.convertTitle', 'I2I 변형 시작'),
+        description: t('sceneI2iCycle.convertDescription', '씬마다 가장 최근 이미지 1장씩, 모두 {{count}}장을 변화 강도 {{strength}}로 I2I 생성합니다.', {
+            count: steps.length,
+            strength: strength.toFixed(2),
+        }),
+    } : {
         title: t('sceneI2iCycle.secondPassTitle', '2단계 시작: 레퍼런스 없이 i2i'),
         description: t('sceneI2iCycle.secondPassDescription', '1단계 이미지 {{count}}장을 변화 강도 {{strength}}로 다시 생성합니다.', {
             count: steps.length,

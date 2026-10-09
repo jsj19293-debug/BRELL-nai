@@ -30,7 +30,8 @@ export interface FirstPassRecord<Entry = unknown> {
     path: string
     seed: number
     /** 그 이미지에 쓰인 캐릭터 프롬프트 (랜덤 캐릭터·순환 큐를 써도 2단계가 같은 캐릭터를 쓰게 한다) */
-    characterPromptIds: string[]
+    /** 없으면(= 이미 있던 이미지를 I2I로 변형) 그 씬이 평소 쓰는 캐릭터를 쓴다 */
+    characterPromptIds?: string[]
     /** 캐릭터 순환 큐로 생성했다면 그때의 항목 */
     sequenceEntry: Entry | null
 }
@@ -76,6 +77,25 @@ export function bytesToDataUrl(bytes: Uint8Array, mime: string): string {
         binary += String.fromCharCode(...bytes.subarray(offset, offset + chunk))
     }
     return `data:${mime};base64,${btoa(binary)}`
+}
+
+/**
+ * "I2I로 변형": 씬마다 가장 최근 이미지 한 장을 고른다 (이미지가 없는 씬은 빠진다). 씬 순서 그대로.
+ */
+export function latestImagePerScene<Image extends { url: string; timestamp: number }>(
+    scenes: ReadonlyArray<{ id: string; images: readonly Image[] }>,
+): Array<{ sceneId: string; path: string }> {
+    const picks: Array<{ sceneId: string; path: string }> = []
+    for (const scene of scenes) {
+        let latest: Image | null = null
+        for (const image of scene.images) {
+            // 아직 파일로 저장되지 않은 미리보기(data:)는 쓰지 않는다.
+            if (image.url.startsWith('data:')) continue
+            if (!latest || image.timestamp >= latest.timestamp) latest = image
+        }
+        if (latest) picks.push({ sceneId: scene.id, path: latest.url })
+    }
+    return picks
 }
 
 export type SceneI2iCyclePhase = 'idle' | 'first' | 'second'

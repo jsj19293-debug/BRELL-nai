@@ -38,8 +38,8 @@ export interface SceneSecondPassOptions {
     noise: number
     /** 1단계와 같은 시드 */
     seed: number
-    /** 1단계에 쓰인 캐릭터 프롬프트 */
-    characterPromptIds: string[]
+    /** 1단계에 쓰인 캐릭터 프롬프트. 없으면 그 씬이 평소 쓰는 캐릭터 */
+    characterPromptIds?: string[]
     disableVibes: boolean
 }
 
@@ -129,7 +129,7 @@ export async function generateSceneImage(options: {
             referenceState.characterImages.map(image => image.id),
         )
         : null
-    const characterPromptIds = secondPass
+    const characterPromptIds = secondPass?.characterPromptIds
         // 2단계는 1단계와 같은 캐릭터를 쓴다 (랜덤 캐릭터를 다시 뽑지 않는다).
         ? secondPass.characterPromptIds
         : sequenceMode
