@@ -663,10 +663,15 @@ export default function SceneMode() {
                 title: changed
                     ? t('scene.folderRefresh.changed', '폴더와 맞췄어요: {{added}}장 추가, {{removed}}장 정리', { added: result.added, removed: result.removed })
                     : t('scene.folderRefresh.same', '폴더와 이미 같아요 (씬 {{n}}개 확인)', { n: result.scenes }),
-                description: result.createdFolders > 0
-                    ? t('scene.folderRefresh.created', '폴더가 없던 씬 {{n}}개의 폴더를 씬 이름으로 만들었어요. 거기에 이미지를 넣고 다시 새로고침하면 들어옵니다.', { n: result.createdFolders })
-                    : undefined,
-                variant: changed || result.createdFolders > 0 ? 'success' : 'default',
+                description: [
+                    result.sorted > 0 ? t('scene.folderRefresh.sorted', '작품 폴더의 이미지 {{n}}장을 번호 · 이름에 맞는 씬으로 옮겼어요.', { n: result.sorted }) : '',
+                    result.unsorted.length > 0 ? t('scene.folderRefresh.unsorted', '맞는 씬이 없어 그대로 둔 파일 {{n}}개: {{names}}', {
+                        n: result.unsorted.length,
+                        names: result.unsorted.slice(0, 4).join(', ') + (result.unsorted.length > 4 ? ' …' : ''),
+                    }) : '',
+                    result.createdFolders > 0 ? t('scene.folderRefresh.created2', '폴더가 없던 씬 {{n}}개의 폴더를 만들었어요.', { n: result.createdFolders }) : '',
+                ].filter(Boolean).join(' ') || undefined,
+                variant: changed || result.sorted > 0 ? 'success' : 'default',
             })
         } catch (error) {
             console.error('Failed to refresh scenes from folders:', error)

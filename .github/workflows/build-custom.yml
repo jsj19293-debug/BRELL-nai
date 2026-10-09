@@ -49,6 +49,7 @@ jobs:
           npm run check:seed-vault
           npm run check:web-split
           npm run check:censor-review
+          npm run check:scene-loose-files
           npm run check:shortcuts
           npm run check:installer-continuity
 
