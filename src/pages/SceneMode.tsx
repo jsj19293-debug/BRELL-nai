@@ -663,12 +663,10 @@ export default function SceneMode() {
                 title: changed
                     ? t('scene.folderRefresh.changed', '폴더와 맞췄어요: {{added}}장 추가, {{removed}}장 정리', { added: result.added, removed: result.removed })
                     : t('scene.folderRefresh.same', '폴더와 이미 같아요 (씬 {{n}}개 확인)', { n: result.scenes }),
-                description: result.missingFolders.length > 0
-                    ? t('scene.folderRefresh.missing', '폴더를 찾지 못한 씬: {{names}}', {
-                        names: result.missingFolders.slice(0, 5).join(', ') + (result.missingFolders.length > 5 ? ' …' : ''),
-                    })
+                description: result.createdFolders > 0
+                    ? t('scene.folderRefresh.created', '폴더가 없던 씬 {{n}}개의 폴더를 씬 이름으로 만들었어요. 거기에 이미지를 넣고 다시 새로고침하면 들어옵니다.', { n: result.createdFolders })
                     : undefined,
-                variant: changed ? 'success' : 'default',
+                variant: changed || result.createdFolders > 0 ? 'success' : 'default',
             })
         } catch (error) {
             console.error('Failed to refresh scenes from folders:', error)

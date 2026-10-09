@@ -3,7 +3,7 @@
  * 이미지 목록을 고친다. 파일을 지웠다가 다시 넣어 "없음"으로 뜨는 씬을 되살린다.
  */
 import { useSceneStore, type SceneImage } from '@/stores/scene-store'
-import { listImageFiles, sceneFolderCandidates } from '@/lib/rell-folders'
+import { ensureFolder, listImageFiles, sceneFolderCandidates } from '@/lib/rell-folders'
 import { syncSceneImages } from '@/lib/scene-folder-sync'
 
 export interface SceneFolderRefreshResult {
@@ -12,11 +12,13 @@ export interface SceneFolderRefreshResult {
     removed: number
     /** 폴더를 찾지 못한 씬 이름 */
     missingFolders: string[]
+    /** 폴더가 없어서 이번에 새로 만든 씬 폴더 수 */
+    createdFolders: number
 }
 
 export async function refreshPresetFromFolders(presetId: string): Promise<SceneFolderRefreshResult> {
     const preset = useSceneStore.getState().presets.find(candidate => candidate.id === presetId)
-    const result: SceneFolderRefreshResult = { scenes: 0, added: 0, removed: 0, missingFolders: [] }
+    const result: SceneFolderRefreshResult = { scenes: 0, added: 0, removed: 0, missingFolders: [], createdFolders: 0 }
     if (!preset) return result
 
     const candidates = await Promise.all(preset.scenes.map(scene => sceneFolderCandidates(preset.name, scene)))
@@ -27,6 +29,8 @@ export async function refreshPresetFromFolders(presetId: string): Promise<SceneF
     const current = useSceneStore.getState().presets.find(candidate => candidate.id === presetId)
     if (!current) return result
     const updates: Record<string, { images: SceneImage[]; folderPath: string }> = {}
+    /** 폴더가 없는 씬의 폴더를 만들 위치 (작품 폴더 / 씬 이름) */
+    const foldersToCreate = new Set<string>()
     const stamp = Date.now()
 
     preset.scenes.forEach((scene, sceneIndex) => {
@@ -37,8 +41,10 @@ export async function refreshPresetFromFolders(presetId: string): Promise<SceneF
         const existing = candidates[sceneIndex].map(folder => byFolder.get(folder)).filter(entry => entry?.exists)
         const folder = existing.find(entry => entry!.files.length > 0) || existing[0]
         if (!folder) {
-            // 아직 한 장도 뽑지 않은 씬은 폴더가 없는 것이 정상이다.
+            // 폴더가 없는 씬: 이름에 맞는 빈 폴더를 만들어 둔다. 거기에 이미지를 넣고 다시 새로고침하면 씬에 들어온다.
             if (latest.images.length > 0) result.missingFolders.push(scene.name)
+            const byName = candidates[sceneIndex][candidates[sceneIndex].length - 1]
+            if (byName) foldersToCreate.add(byName)
             return
         }
         const synced = syncSceneImages(latest.images, folder.folder, folder.files, (file, timestamp, index) => ({
@@ -52,6 +58,15 @@ export async function refreshPresetFromFolders(presetId: string): Promise<SceneF
         result.removed += synced.removed
         updates[scene.id] = { images: synced.images, folderPath: folder.folder }
     })
+
+    for (const folder of foldersToCreate) {
+        try {
+            await ensureFolder(folder)
+            result.createdFolders++
+        } catch (error) {
+            console.warn('Failed to create the scene folder:', folder, error)
+        }
+    }
 
     useSceneStore.getState().applySceneFolderSync(presetId, updates)
     return result
