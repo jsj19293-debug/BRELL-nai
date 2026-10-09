@@ -7,12 +7,11 @@ export type ShortcutAction =
     | 'navigate:main'
     | 'navigate:scenes'
     | 'navigate:tools'
-    | 'navigate:web'
+    | 'navigate:folders'
     | 'navigate:library'
     | 'navigate:settings'
     | 'navigate:next'
     | 'navigate:prev'
-    | 'open:promptGenerator'
     | 'open:fragmentDialog'
     | 'open:parameterSettings'
     | 'open:imageReference'
@@ -20,7 +19,6 @@ export type ShortcutAction =
     | 'open:presetDialog'
     | 'action:generate'
     | 'action:resetFragmentCounters'
-    | 'action:copyDanbooruTags'
 
 // 단축키 바인딩 인터페이스
 export interface KeyBinding {
@@ -37,12 +35,11 @@ const DEFAULT_BINDINGS: Record<ShortcutAction, KeyBinding> = {
     'navigate:main': { key: '1', ctrl: true, label: 'Ctrl+1', description: 'shortcuts.actions.navigateMain' },
     'navigate:scenes': { key: '2', ctrl: true, label: 'Ctrl+2', description: 'shortcuts.actions.navigateScenes' },
     'navigate:tools': { key: '3', ctrl: true, label: 'Ctrl+3', description: 'shortcuts.actions.navigateTools' },
-    'navigate:web': { key: '4', ctrl: true, label: 'Ctrl+4', description: 'shortcuts.actions.navigateWeb' },
+    'navigate:folders': { key: '4', ctrl: true, label: 'Ctrl+4', description: 'shortcuts.actions.navigateFolders' },
     'navigate:library': { key: '5', ctrl: true, label: 'Ctrl+5', description: 'shortcuts.actions.navigateLibrary' },
     'navigate:settings': { key: '6', ctrl: true, label: 'Ctrl+6', description: 'shortcuts.actions.navigateSettings' },
     'navigate:next': { key: 'Tab', label: 'Tab', description: 'shortcuts.actions.navigateNext' },
     'navigate:prev': { key: 'Tab', shift: true, label: 'Shift+Tab', description: 'shortcuts.actions.navigatePrev' },
-    'open:promptGenerator': { key: 'g', ctrl: true, label: 'Ctrl+G', description: 'shortcuts.actions.promptGenerator' },
     'open:fragmentDialog': { key: 'f', ctrl: true, label: 'Ctrl+F', description: 'shortcuts.actions.fragmentDialog' },
     'open:parameterSettings': { key: 'p', ctrl: true, label: 'Ctrl+P', description: 'shortcuts.actions.parameterSettings' },
     'open:imageReference': { key: 'i', ctrl: true, label: 'Ctrl+I', description: 'shortcuts.actions.imageReference' },
@@ -50,7 +47,6 @@ const DEFAULT_BINDINGS: Record<ShortcutAction, KeyBinding> = {
     'open:presetDialog': { key: '`', ctrl: true, label: 'Ctrl+`', description: 'shortcuts.actions.presetDialog' },
     'action:generate': { key: 'Enter', ctrl: true, label: 'Ctrl+Enter', description: 'shortcuts.actions.generate' },
     'action:resetFragmentCounters': { key: 'r', ctrl: true, shift: true, label: 'Ctrl+Shift+R', description: 'shortcuts.actions.resetFragmentCounters' },
-    'action:copyDanbooruTags': { key: 'e', ctrl: true, label: 'Ctrl+E', description: 'shortcuts.actions.copyDanbooruTags' },
 }
 
 interface ShortcutState {
@@ -163,12 +159,11 @@ export const SHORTCUT_ACTIONS: { action: ShortcutAction; category: string }[] = 
     { action: 'navigate:main', category: 'navigation' },
     { action: 'navigate:scenes', category: 'navigation' },
     { action: 'navigate:tools', category: 'navigation' },
-    { action: 'navigate:web', category: 'navigation' },
+    { action: 'navigate:folders', category: 'navigation' },
     { action: 'navigate:library', category: 'navigation' },
     { action: 'navigate:settings', category: 'navigation' },
     { action: 'navigate:next', category: 'navigation' },
     { action: 'navigate:prev', category: 'navigation' },
-    { action: 'open:promptGenerator', category: 'dialog' },
     { action: 'open:fragmentDialog', category: 'dialog' },
     { action: 'open:parameterSettings', category: 'dialog' },
     { action: 'open:imageReference', category: 'dialog' },
@@ -176,5 +171,4 @@ export const SHORTCUT_ACTIONS: { action: ShortcutAction; category: string }[] = 
     { action: 'open:presetDialog', category: 'dialog' },
     { action: 'action:generate', category: 'action' },
     { action: 'action:resetFragmentCounters', category: 'action' },
-    { action: 'action:copyDanbooruTags', category: 'action' },
 ]

@@ -1,4 +1,4 @@
-import { lazy, Suspense, useState, useCallback, useEffect, useMemo } from 'react'
+import { useState, useCallback, useEffect, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useLocation } from 'react-router-dom'
 import { Button } from '@/components/ui/button'
@@ -7,7 +7,6 @@ import { CharacterSettingsDialog } from '@/components/character/CharacterSetting
 import { CharacterPromptPanel } from '@/components/character/CharacterPromptPanel'
 import { AutocompleteTextarea } from '@/components/ui/AutocompleteTextarea'
 
-const PromptGeneratorDialog = lazy(() => import('@/components/prompt/PromptGeneratorDialog').then(module => ({ default: module.PromptGeneratorDialog })))
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
@@ -45,7 +44,6 @@ import {
     ChevronDown,
     ChevronUp,
 } from 'lucide-react'
-import GeminiIcon from '@/assets/gemini-color.svg'
 import { ShareCardDialog } from '@/components/image/ShareCardDialog'
 import { useGenerationStore, AVAILABLE_MODELS } from '@/stores/generation-store'
 import { useSceneStore } from '@/stores/scene-store'
@@ -271,7 +269,6 @@ export function PromptPanel() {
         steps,
     ])
 
-    const [promptGenOpen, setPromptGenOpen] = useState(false)
     const [characterPanelOpen, setCharacterPanelOpen] = useState(false)
     const [imageRefDialogOpen, setImageRefDialogOpen] = useState(false)
     const [parameterDialogOpen, setParameterDialogOpen] = useState(false)
@@ -446,9 +443,6 @@ export function PromptPanel() {
 
     // 전역 단축키 이벤트 수신
     useEffect(() => {
-        const handleOpenPromptGen = () => {
-            if (!isSceneReviewDialogOpen()) setPromptGenOpen(prev => !prev)
-        }
         const handleOpenParameters = () => {
             if (!isSceneReviewDialogOpen()) setParameterDialogOpen(prev => !prev)
         }
@@ -463,13 +457,11 @@ export function PromptPanel() {
             setImageRefDialogOpen(prev => !prev)
         }
 
-        window.addEventListener(SHORTCUT_EVENTS.OPEN_PROMPT_GENERATOR, handleOpenPromptGen)
         window.addEventListener(SHORTCUT_EVENTS.OPEN_PARAMETER_SETTINGS, handleOpenParameters)
         window.addEventListener(SHORTCUT_EVENTS.OPEN_CHARACTER_PROMPT, handleOpenCharacterPrompt)
         window.addEventListener(SHORTCUT_EVENTS.OPEN_IMAGE_REFERENCE, handleOpenImageReference)
 
         return () => {
-            window.removeEventListener(SHORTCUT_EVENTS.OPEN_PROMPT_GENERATOR, handleOpenPromptGen)
             window.removeEventListener(SHORTCUT_EVENTS.OPEN_PARAMETER_SETTINGS, handleOpenParameters)
             window.removeEventListener(SHORTCUT_EVENTS.OPEN_CHARACTER_PROMPT, handleOpenCharacterPrompt)
             window.removeEventListener(SHORTCUT_EVENTS.OPEN_IMAGE_REFERENCE, handleOpenImageReference)
@@ -737,17 +729,6 @@ export function PromptPanel() {
                         </Button>
                     </Tip>
                 )}
-                {/* AI Prompt Generator Button */}
-                <Tip content={t('promptGenerator.desc', 'Gemini AI로 프롬프트 생성')}>
-                    <Button
-                        variant="outline"
-                        size="icon"
-                        className="h-9 w-9 rounded-xl shrink-0 hover:bg-accent"
-                        onClick={() => setPromptGenOpen(true)}
-                    >
-                        <img src={GeminiIcon} alt="Gemini" className="h-5 w-5" />
-                    </Button>
-                </Tip>
                 {/* Parameter Settings Dialog */}
                 <Dialog open={parameterDialogOpen} onOpenChange={setParameterDialogOpen}>
                     <DialogTrigger asChild>
@@ -1024,17 +1005,6 @@ export function PromptPanel() {
                 onOpenChange={setShareCardOpen}
             />
 
-            {/* AI Prompt Generator Dialog */}
-            {promptGenOpen && <Suspense fallback={null}><PromptGeneratorDialog
-                open={promptGenOpen}
-                onOpenChange={setPromptGenOpen}
-                onApply={(tags) => {
-                    // Append to additional prompt
-                    const current = additionalPrompt.trim()
-                    const newValue = current ? `${current}, ${tags}` : tags
-                    setAdditionalPrompt(newValue)
-                }}
-            /></Suspense>}
 
             {/* Bottom Generate Button Area */}
             <div className="p-0">

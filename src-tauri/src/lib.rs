@@ -1,6 +1,7 @@
 #[cfg(any(target_os = "windows", target_os = "linux", target_os = "macos"))]
 mod app_data_migration;
 mod inbox_native;
+mod rell_native;
 mod reference_paths;
 
 use serde::{Deserialize, Serialize};
@@ -611,6 +612,248 @@ fn export_scene_images_zip_to_file(
             Err(error)
         }
     }
+}
+
+// ---------------------------------------------------------------------------
+// NAIS 2 RELL: 씬 이미지 WebP 폴더 내보내기, 폴더 관리자, 씬 폴더 새로고침
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct SceneFolderExportResult {
+    exported_count: usize,
+    skipped_count: usize,
+    skipped: Vec<String>,
+    bytes_before: u64,
+    bytes_after: u64,
+}
+
+/// 그림의 픽셀만 다시 WebP로 써서 메타데이터(EXIF·PNG 텍스트·알파에 숨은 프롬프트)를 남기지 않는다.
+fn encode_clean_webp(source_bytes: &[u8], lossless: bool, quality: u8) -> Result<Vec<u8>, String> {
+    let decoded = image::load_from_memory(source_bytes).map_err(|error| error.to_string())?;
+    let mut rgba = decoded.to_rgba8();
+    let (width, height) = (rgba.width(), rgba.height());
+    let quality = quality.clamp(1, 100) as f32;
+
+    let encoded = if rell_native::is_opaque_rgba(rgba.as_raw()) {
+        let rgb = rell_native::rgba_to_rgb(rgba.as_raw());
+        let encoder = webp::Encoder::from_rgb(&rgb, width, height);
+        if lossless {
+            encoder.encode_lossless().to_vec()
+        } else {
+            encoder.encode(quality).to_vec()
+        }
+    } else {
+        rell_native::clear_alpha_payload(&mut rgba);
+        let encoder = webp::Encoder::from_rgba(rgba.as_raw(), width, height);
+        if lossless {
+            encoder.encode_lossless().to_vec()
+        } else {
+            encoder.encode(quality).to_vec()
+        }
+    };
+    if encoded.is_empty() {
+        return Err("WebP encoding produced no data".to_string());
+    }
+    Ok(encoded)
+}
+
+fn export_scene_images_folder_blocking(
+    app: tauri::AppHandle,
+    output_dir: String,
+    entries: Vec<SceneZipEntry>,
+    lossless: bool,
+    quality: u8,
+    export_id: String,
+) -> Result<SceneFolderExportResult, String> {
+    use base64::{engine::general_purpose::STANDARD, Engine as _};
+    use std::{fs, path::PathBuf};
+    use tauri::Emitter;
+
+    let directory = PathBuf::from(&output_dir);
+    fs::create_dir_all(&directory).map_err(|error| error.to_string())?;
+
+    let total = entries.len();
+    let mut result = SceneFolderExportResult {
+        exported_count: 0,
+        skipped_count: 0,
+        skipped: Vec::new(),
+        bytes_before: 0,
+        bytes_after: 0,
+    };
+
+    for (index, entry) in entries.into_iter().enumerate() {
+        let entry_result = (|| -> Result<(u64, u64), String> {
+            if !rell_native::is_safe_file_name(&entry.file_name) {
+                return Err("Invalid output file name".to_string());
+            }
+            let source_bytes = if entry.source.starts_with("data:") {
+                let encoded = entry
+                    .source
+                    .split_once(',')
+                    .map(|(_, data)| data)
+                    .ok_or_else(|| "Invalid image data URL".to_string())?;
+                STANDARD.decode(encoded).map_err(|error| error.to_string())?
+            } else {
+                fs::read(&entry.source).map_err(|error| error.to_string())?
+            };
+            let encoded = encode_clean_webp(&source_bytes, lossless, quality)?;
+
+            // 쓰다가 끊겨도 반쯤 쓴 파일이 남지 않게 임시 이름으로 쓰고 바꾼다.
+            let target = directory.join(&entry.file_name);
+            let temporary = directory.join(format!("{}.partial", entry.file_name));
+            fs::write(&temporary, &encoded).map_err(|error| error.to_string())?;
+            if target.exists() {
+                fs::remove_file(&target).map_err(|error| error.to_string())?;
+            }
+            fs::rename(&temporary, &target).map_err(|error| {
+                let _ = fs::remove_file(&temporary);
+                error.to_string()
+            })?;
+            Ok((source_bytes.len() as u64, encoded.len() as u64))
+        })();
+
+        match entry_result {
+            Ok((before, after)) => {
+                result.exported_count += 1;
+                result.bytes_before += before;
+                result.bytes_after += after;
+            }
+            Err(error) => {
+                result.skipped_count += 1;
+                log::warn!("Skipping scene folder export '{}': {error}", entry.file_name);
+                result.skipped.push(entry.file_name);
+            }
+        }
+        let _ = app.emit(
+            "scene-zip-progress",
+            SceneZipProgress {
+                export_id: export_id.clone(),
+                completed: index + 1,
+                total,
+            },
+        );
+    }
+
+    Ok(result)
+}
+
+#[tauri::command]
+async fn export_scene_images_folder(
+    app: tauri::AppHandle,
+    output_dir: String,
+    entries: Vec<SceneZipEntry>,
+    lossless: bool,
+    quality: u8,
+    export_id: String,
+) -> Result<SceneFolderExportResult, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        export_scene_images_folder_blocking(app, output_dir, entries, lossless, quality, export_id)
+    })
+    .await
+    .map_err(|error| format!("Folder export task failed: {error}"))?
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct RellImageFile {
+    path: String,
+    name: String,
+    modified_ms: u64,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct RellFolderImages {
+    folder: String,
+    exists: bool,
+    files: Vec<RellImageFile>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct RellSubfolder {
+    name: String,
+    path: String,
+    image_count: usize,
+    modified_ms: u64,
+}
+
+#[tauri::command]
+async fn rell_list_image_files(folders: Vec<String>) -> Result<Vec<RellFolderImages>, String> {
+    tokio::task::spawn_blocking(move || {
+        folders
+            .iter()
+            .map(|folder| {
+                let listed = rell_native::list_image_files(folder);
+                RellFolderImages {
+                    folder: listed.folder,
+                    exists: listed.exists,
+                    files: listed
+                        .files
+                        .into_iter()
+                        .map(|file| RellImageFile {
+                            path: file.path,
+                            name: file.name,
+                            modified_ms: file.modified_ms,
+                        })
+                        .collect(),
+                }
+            })
+            .collect()
+    })
+    .await
+    .map_err(|error| format!("Folder listing worker failed: {error}"))
+}
+
+#[tauri::command]
+async fn rell_list_subfolders(root: String) -> Result<Vec<RellSubfolder>, String> {
+    tokio::task::spawn_blocking(move || {
+        rell_native::list_subfolders(&root).map(|folders| {
+            folders
+                .into_iter()
+                .map(|folder| RellSubfolder {
+                    name: folder.name,
+                    path: folder.path,
+                    image_count: folder.image_count,
+                    modified_ms: folder.modified_ms,
+                })
+                .collect()
+        })
+    })
+    .await
+    .map_err(|error| format!("Folder listing worker failed: {error}"))?
+}
+
+/// 한글 문구를 영어로 옮긴다 (MyMemory 무료 번역, 키 없음). 응답 JSON을 그대로 돌려준다.
+/// 보내는 것은 사용자가 프롬프트 칸에 친 그 문구 하나뿐이다.
+#[tauri::command]
+async fn rell_translate_ko_en(text: String) -> Result<String, String> {
+    let text = text.trim();
+    if text.is_empty() || text.chars().count() > 300 {
+        return Err("INVALID_TEXT".to_string());
+    }
+    let url = Url::parse_with_params(
+        "https://api.mymemory.translated.net/get",
+        &[("q", text), ("langpair", "ko|en")],
+    )
+    .map_err(|_| "INVALID_URL".to_string())?;
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(12))
+        .build()
+        .map_err(|error| format!("NETWORK_ERROR: {error}"))?;
+    let response = client
+        .get(url.as_str())
+        .send()
+        .await
+        .map_err(|error| format!("NETWORK_ERROR: {error}"))?;
+    if !response.status().is_success() {
+        return Err(format!("HTTP_{}", response.status().as_u16()));
+    }
+    response
+        .text()
+        .await
+        .map_err(|error| format!("NETWORK_ERROR: {error}"))
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -2560,6 +2803,10 @@ pub fn run() {
             state_db_set,
             state_db_remove,
             export_scene_images_zip,
+            export_scene_images_folder,
+            rell_list_image_files,
+            rell_list_subfolders,
+            rell_translate_ko_en,
             inbox_http,
             inbox_file_read,
             inbox_file_write,

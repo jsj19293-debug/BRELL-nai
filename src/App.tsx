@@ -10,15 +10,16 @@ import MainMode from '@/pages/MainMode'
 import { DrawOverHost } from '@/components/tools/DrawOverHost'
 import { AnnouncementDialog } from '@/components/AnnouncementDialog'
 import { startInboxInBackground } from '@/inbox'
+import { installBlurMode } from '@/lib/blur-mode'
 
 const SceneMode = lazy(() => import('@/pages/SceneMode'))
 const SceneDetail = lazy(() => import('@/pages/SceneDetail'))
-const WebView = lazy(() => import('@/pages/WebView'))
 const Library = lazy(() => import('@/pages/Library'))
 const CloudR2 = lazy(() => import('@/pages/CloudR2'))
 const Settings = lazy(() => import('@/pages/Settings'))
 const ToolsMode = lazy(() => import('@/pages/ToolsMode'))
 const ExifManager = lazy(() => import('@/pages/ExifManager'))
+const FolderManager = lazy(() => import('@/pages/FolderManager'))
 const Inbox = lazy(() => import('@/pages/Inbox'))
 
 function AppContent() {
@@ -31,6 +32,7 @@ function AppContent() {
     // 알림 모아보기: 화면을 열지 않아도 연결된 플랫폼의 댓글을 주기적으로 모은다.
     useEffect(() => {
         startInboxInBackground()
+        installBlurMode()
     }, [])
 
     // Disable right-click globally except for allowed elements
@@ -61,7 +63,7 @@ function AppContent() {
                         <Route path="/scenes/:id" element={<SceneDetail />} />
                         <Route path="/tools" element={<ToolsMode />} />
                         <Route path="/exif" element={<ExifManager />} />
-                        <Route path="/web" element={<WebView />} />
+                        <Route path="/folders" element={<FolderManager />} />
                         <Route path="/library" element={<Library />} />
                         <Route path="/inbox" element={<Inbox />} />
                         <Route path="/cloud-r2" element={<CloudR2 />} />

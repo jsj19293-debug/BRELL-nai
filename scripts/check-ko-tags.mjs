@@ -1,4 +1,4 @@
-// 한글 → 태그 찾기 검사: 내장 용어집이 태그 색인과 맞는지, 검색 순위, AI 응답 해석, 제공사별 요청 모양.
+// 한글 → 태그 찾기 검사: 내장 용어집이 태그 색인과 맞는지, 검색 순위.
 import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 import { KO_TAG_GLOSSARY } from '../src/lib/ko-tag-glossary.ts'
@@ -6,10 +6,6 @@ import {
     extractJson, hasHangul, keepKnownTags, koNameOfTag, mergeSuggestions, normalizeKo,
     normalizeTagLabel, readTagList, searchKoGlossary,
 } from '../src/lib/ko-tags.ts'
-import {
-    AI_MODELS, AiError, DEFAULT_AI_MODEL, aiErrorCode, buildAiRequest, generatePromptFromText,
-    parseGeneratedPrompt, readAiText, requestAiText, suggestTagsForTerm,
-} from '../src/services/ai-tag-service.ts'
 
 // --- 용어집의 모든 태그는 앱의 단부루 색인에 그 표기 그대로 있어야 한다 ---
 const index = JSON.parse(await readFile(new URL('../src/assets/tags.json', import.meta.url), 'utf8'))
@@ -79,100 +75,4 @@ assert.deepEqual(
     [{ tag: 'rain', ko: '비' }, { tag: 'umbrella', ko: '우산' }],
 )
 
-assert.deepEqual(parseGeneratedPrompt('{"tags":[{"tag":"1girl","ko":"소녀 1명"}],"natural":" A girl. "}'), { tags: [{ tag: '1girl', ko: '소녀 1명' }], natural: 'A girl.' })
-// JSON이 아니면 이전처럼 쉼표로 나눈 태그로 읽는다.
-assert.deepEqual(parseGeneratedPrompt('1girl, long_hair,\n"smile"').tags.map(item => item.tag), ['1girl', 'long hair', 'smile'])
-
-// --- 제공사별 요청 모양 ---
-const prompt = { system: 'SYS', user: '카페에서 커피를 마시는 소녀' }
-{
-    const { url, init } = buildAiRequest({ provider: 'claude', apiKey: ' sk-ant-x ', model: '' }, prompt)
-    assert.equal(url, 'https://api.anthropic.com/v1/messages')
-    assert.equal(init.headers['x-api-key'], 'sk-ant-x')
-    assert.equal(init.headers['anthropic-version'], '2023-06-01')
-    assert.equal(init.headers['anthropic-dangerous-direct-browser-access'], 'true')
-    const body = JSON.parse(init.body)
-    assert.equal(body.model, DEFAULT_AI_MODEL.claude)
-    assert.equal(body.system, 'SYS')
-    assert.deepEqual(body.messages, [{ role: 'user', content: prompt.user }])
-    assert.ok(body.max_tokens > 0)
-}
-{
-    const { url, init } = buildAiRequest({ provider: 'openai', apiKey: 'sk-x', model: 'my-model' }, prompt)
-    assert.equal(url, 'https://api.openai.com/v1/chat/completions')
-    assert.equal(init.headers.authorization, 'Bearer sk-x')
-    const body = JSON.parse(init.body)
-    assert.equal(body.model, 'my-model')
-    assert.deepEqual(body.messages.map(message => message.role), ['system', 'user'])
-    assert.deepEqual(body.response_format, { type: 'json_object' })
-    assert.equal('temperature' in body, false, '추론 모델이 거절하는 옵션은 보내지 않는다')
-    assert.equal('max_tokens' in body, false)
-}
-{
-    const { url, init } = buildAiRequest({ provider: 'gemini', apiKey: 'AIza x', model: 'gemini-2.5-flash' }, prompt)
-    assert.equal(url, 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=AIza%20x')
-    const body = JSON.parse(init.body)
-    assert.equal(body.systemInstruction.parts[0].text, 'SYS')
-    assert.equal(body.contents[0].parts[0].text, prompt.user)
-    assert.equal(body.generationConfig.responseMimeType, 'application/json')
-}
-for (const provider of ['gemini', 'claude', 'openai']) {
-    assert.ok(AI_MODELS[provider].some(model => model.id === DEFAULT_AI_MODEL[provider]), `${provider} 기본 모델이 목록에 있다`)
-}
-
-// --- 제공사별 응답 읽기 ---
-assert.deepEqual(readAiText('claude', { content: [{ type: 'text', text: '{"a":' }, { type: 'tool_use' }, { type: 'text', text: '1}' }], usage: { input_tokens: 10, output_tokens: 5 } }),
-    { text: '{"a":1}', usage: { promptTokens: 10, outputTokens: 5, totalTokens: 15 } })
-assert.deepEqual(readAiText('openai', { choices: [{ message: { content: 'hi' } }], usage: { prompt_tokens: 3, completion_tokens: 4, total_tokens: 7 } }),
-    { text: 'hi', usage: { promptTokens: 3, outputTokens: 4, totalTokens: 7 } })
-assert.deepEqual(readAiText('gemini', { candidates: [{ content: { parts: [{ text: 'a' }, { text: 'b' }] } }] }), { text: 'ab', usage: null })
-assert.deepEqual(readAiText('claude', {}), { text: '', usage: null })
-
-assert.equal(aiErrorCode(401), 'AUTH')
-assert.equal(aiErrorCode(400, 'Your credit balance is too low'), 'CREDIT')
-assert.equal(aiErrorCode(429, 'You exceeded your current quota'), 'CREDIT')
-assert.equal(aiErrorCode(429), 'RATE')
-assert.equal(aiErrorCode(404, 'model: foo'), 'MODEL')
-assert.equal(aiErrorCode(400, 'The model `x` does not exist'), 'MODEL')
-assert.equal(aiErrorCode(529), 'SERVER')
-assert.equal(aiErrorCode(400), 'BAD_REQUEST')
-
-// --- 가짜 fetch로 끝까지 ---
-const reply = (body, status = 200) => async () => new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } })
-{
-    const calls = []
-    const fetcher = async (url, init) => { calls.push({ url, init }); return reply({ content: [{ type: 'text', text: '{"tags":[{"tag":"cherry_blossoms","ko":"벚꽃"},{"tag":"petals","ko":"꽃잎"}]}' }] })() }
-    const tags = await suggestTagsForTerm(' 벚꽃 ', { provider: 'claude', apiKey: 'k', model: '' }, { fetcher })
-    assert.deepEqual(tags, [{ tag: 'cherry blossoms', ko: '벚꽃' }, { tag: 'petals', ko: '꽃잎' }])
-    assert.equal(JSON.parse(calls[0].init.body).messages[0].content, '벚꽃')
-    assert.ok(calls[0].init.signal instanceof AbortSignal)
-}
-{
-    const generated = await generatePromptFromText('카페 소녀', { provider: 'openai', apiKey: 'k', model: '' }, {
-        fetcher: reply({ choices: [{ message: { content: '{"tags":[{"tag":"1girl","ko":"소녀 1명"},{"tag":"cafe","ko":"카페"}],"natural":"A girl in a cafe."}' } }], usage: { prompt_tokens: 1, completion_tokens: 2, total_tokens: 3 } }),
-    })
-    assert.deepEqual(generated.tags.map(item => item.tag), ['1girl', 'cafe'])
-    assert.equal(generated.natural, 'A girl in a cafe.')
-    assert.equal(generated.usage.totalTokens, 3)
-}
-const failure = async (run) => { try { await run(); return null } catch (error) { return error } }
-{
-    const noKey = await failure(() => requestAiText({ provider: 'claude', apiKey: '  ', model: '' }, prompt, { fetcher: reply({}) }))
-    assert.ok(noKey instanceof AiError)
-    assert.equal(noKey.code, 'NO_KEY')
-    const auth = await failure(() => requestAiText({ provider: 'claude', apiKey: 'k', model: '' }, prompt, { fetcher: reply({ error: { message: 'invalid x-api-key' } }, 401) }))
-    assert.equal(auth.code, 'AUTH')
-    assert.equal(auth.status, 401)
-    assert.equal(auth.detail, 'invalid x-api-key')
-    const empty = await failure(() => requestAiText({ provider: 'openai', apiKey: 'k', model: '' }, prompt, { fetcher: reply({ choices: [{ message: { content: '  ' } }] }) }))
-    assert.equal(empty.code, 'EMPTY')
-    const network = await failure(() => requestAiText({ provider: 'gemini', apiKey: 'k', model: '' }, prompt, { fetcher: async () => { throw new TypeError('Failed to fetch') } }))
-    assert.equal(network.code, 'NETWORK')
-    const timeout = await failure(() => requestAiText({ provider: 'gemini', apiKey: 'k', model: '' }, prompt, {
-        timeoutMs: 20,
-        fetcher: (_url, init) => new Promise((_resolve, reject) => init.signal.addEventListener('abort', () => reject(Object.assign(new Error('aborted'), { name: 'AbortError' })))),
-    }))
-    assert.equal(timeout.code, 'TIMEOUT')
-}
-
-console.log(`Korean tag checks passed: ${KO_TAG_GLOSSARY.length} glossary tags in the index, search ranking, AI parsing, provider requests.`)
+console.log(`Korean tag checks passed: ${KO_TAG_GLOSSARY.length} glossary tags in the index, search ranking.`)

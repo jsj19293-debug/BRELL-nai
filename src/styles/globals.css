@@ -180,3 +180,16 @@ html:is(.panel-resizing, .window-resizing, .window-moving) #root .layout-surface
   box-shadow: none !important;
   transition: none !important;
 }
+
+/* 블러 모드: 마우스를 올린 이미지만 또렷하게 (src/lib/blur-mode.ts) */
+html.blur-mode img:not([data-no-blur]) {
+    transition: filter 120ms ease;
+}
+html.blur-mode img:not([data-no-blur]):not([data-blur-reveal]) {
+    filter: blur(22px) saturate(0.9);
+    clip-path: inset(0);
+}
+html.blur-mode [data-no-blur] img {
+    filter: none;
+    clip-path: none;
+}

@@ -16,6 +16,24 @@ export interface CustomResolution {
     height: number
 }
 
+export interface SceneWebpExportSettings {
+    prefix: string
+    start: number
+    pad: boolean
+    scope: 'representative' | 'all'
+    lossless: boolean
+    quality: number
+}
+
+export const DEFAULT_SCENE_WEBP_EXPORT: SceneWebpExportSettings = {
+    prefix: '',
+    start: 1,
+    pad: false,
+    scope: 'representative',
+    lossless: true,
+    quality: 92,
+}
+
 interface SettingsState {
     // Save settings
     savePath: string
@@ -39,19 +57,14 @@ interface SettingsState {
     generationDelayJitter: number // Upper random offset in ms; 0 disables jitter
     acknowledgedAnnouncementId: string
 
-    // Gemini API settings
-    geminiApiKey: string
-
-    // AI 태그 찾기 (한글 → 단부루 태그): Claude · GPT 키와 사용할 제공사·모델
-    anthropicApiKey: string
-    openaiApiKey: string
-    aiTagProvider: 'gemini' | 'claude' | 'openai'
-    /** 제공사별 모델 ID. 비어 있으면 기본 모델을 쓴다. */
-    aiTagModels: { gemini: string; claude: string; openai: string }
-    /** 프롬프트 칸에 한글을 치면 AI에게도 태그를 물어본다 (끄면 내장 용어집만 쓴다) */
-    koTagAiSuggestEnabled: boolean
     /** 영어 태그 자동완성 옆에 한글 뜻을 보여준다 */
     koTagHintEnabled: boolean
+    /** 블러 모드: 마우스를 올리기 전에는 이미지를 흐리게 보여준다 */
+    blurModeEnabled: boolean
+    /** 씬 모드 WebP 내보내기에서 마지막으로 쓴 설정 */
+    sceneWebpExport: SceneWebpExportSettings
+    /** 프롬프트 칸에 한글 문구를 치면 영어 번역을 보여준다 (번역 서비스로 그 문구를 보낸다) */
+    koTranslateEnabled: boolean
 
     // 씬 모드 "레퍼런스 → i2i" 자동 싸이클
     sceneRefI2iCycleEnabled: boolean
@@ -134,9 +147,10 @@ interface SettingsState {
     setGenerationDelay: (delay: number) => void
     setGenerationDelayJitter: (delay: number) => void
     acknowledgeAnnouncement: (id: string) => void
-    setGeminiApiKey: (key: string) => void
-    setAiTagConfig: (config: Partial<Pick<SettingsState, 'anthropicApiKey' | 'openaiApiKey' | 'aiTagProvider' | 'koTagAiSuggestEnabled' | 'koTagHintEnabled'>>) => void
-    setAiTagModel: (provider: 'gemini' | 'claude' | 'openai', model: string) => void
+    setKoTagHintEnabled: (enabled: boolean) => void
+    setBlurModeEnabled: (enabled: boolean) => void
+    setSceneWebpExport: (config: Partial<SceneWebpExportSettings>) => void
+    setKoTranslateEnabled: (enabled: boolean) => void
     setSceneRefI2iCycle: (config: Partial<Pick<SettingsState, 'sceneRefI2iCycleEnabled' | 'sceneRefI2iStrength' | 'sceneRefI2iNoise' | 'sceneRefI2iDisableVibes'>>) => void
     setLibraryPath: (path: string, useAbsolute?: boolean) => void
     setImageFormat: (format: 'png' | 'webp') => void
@@ -196,13 +210,10 @@ export const useSettingsStore = create<SettingsState>()(
             generationDelay: 500, // Default: 500ms delay between batch generations
             generationDelayJitter: 0,
             acknowledgedAnnouncementId: '',
-            geminiApiKey: '', // Default: empty
-            anthropicApiKey: '',
-            openaiApiKey: '',
-            aiTagProvider: 'gemini',
-            aiTagModels: { gemini: '', claude: '', openai: '' },
-            koTagAiSuggestEnabled: true,
             koTagHintEnabled: true,
+            blurModeEnabled: false,
+            sceneWebpExport: { ...DEFAULT_SCENE_WEBP_EXPORT },
+            koTranslateEnabled: true,
             sceneRefI2iCycleEnabled: false,
             sceneRefI2iStrength: SCENE_I2I_DEFAULT_STRENGTH,
             sceneRefI2iNoise: 0,
@@ -291,16 +302,23 @@ export const useSettingsStore = create<SettingsState>()(
             setGenerationDelay: (delay) => set({ generationDelay: Math.max(0, Math.min(5000, delay)) }),
             setGenerationDelayJitter: (delay) => set({ generationDelayJitter: Number.isFinite(delay) ? Math.max(0, Math.min(5000, delay)) : 0 }),
             acknowledgeAnnouncement: (acknowledgedAnnouncementId) => set({ acknowledgedAnnouncementId }),
-            setGeminiApiKey: (key) => set({ geminiApiKey: key }),
-            setAiTagConfig: (config) => set(config),
+            setKoTagHintEnabled: (koTagHintEnabled) => set({ koTagHintEnabled }),
+            setBlurModeEnabled: (blurModeEnabled) => set({ blurModeEnabled }),
+            setSceneWebpExport: (config) => set(state => {
+                const next = { ...DEFAULT_SCENE_WEBP_EXPORT, ...state.sceneWebpExport, ...config }
+                return {
+                    sceneWebpExport: {
+                        ...next,
+                        quality: Math.max(70, Math.min(100, Math.round(Number(next.quality) || DEFAULT_SCENE_WEBP_EXPORT.quality))),
+                    },
+                }
+            }),
+            setKoTranslateEnabled: (koTranslateEnabled) => set({ koTranslateEnabled }),
             setSceneRefI2iCycle: (config) => set({
                 ...config,
                 ...(config.sceneRefI2iStrength === undefined ? {} : { sceneRefI2iStrength: clampSceneI2iStrength(config.sceneRefI2iStrength) }),
                 ...(config.sceneRefI2iNoise === undefined ? {} : { sceneRefI2iNoise: clampSceneI2iNoise(config.sceneRefI2iNoise) }),
             }),
-            setAiTagModel: (provider, model) => set(state => ({
-                aiTagModels: { ...state.aiTagModels, [provider]: model.trim() },
-            })),
             setLibraryPath: (libraryPath, useAbsolute) => set({
                 libraryPath,
                 useAbsoluteLibraryPath: useAbsolute ?? false

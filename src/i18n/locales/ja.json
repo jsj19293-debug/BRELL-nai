@@ -27,7 +27,7 @@
     "confirm": "確認しました"
   },
   "app": {
-    "name": "NAIS2",
+    "name": "NAIS 2 RELL",
     "description": "NovelAI 統合スタジオ"
   },
   "shareCard": {
@@ -353,6 +353,7 @@
     "charRefWarning": "キャラクター参照が検出されました。Director Tools経由で抽出がサポートされています。"
   },
   "nav": {
+    "folders": "フォルダ",
     "inbox": "通知",
     "main": "メイン",
     "scenes": "シーンモード",
@@ -1057,6 +1058,7 @@
       "navigateScenes": "シーンモード",
       "navigateTools": "スマートツール",
       "navigateWeb": "ウェブ",
+      "navigateFolders": "フォルダ管理",
       "navigateLibrary": "ライブラリ",
       "navigateSettings": "設定",
       "navigateNext": "次のメニュー",

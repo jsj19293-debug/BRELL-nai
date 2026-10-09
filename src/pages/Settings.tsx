@@ -53,7 +53,6 @@ import { useSettingsStore } from '@/stores/settings-store'
 import { useShortcutStore, SHORTCUT_ACTIONS, formatKeyBinding, type ShortcutAction, type KeyBinding } from '@/stores/shortcut-store'
 import { toast } from '@/components/ui/use-toast'
 import NovelAILogo from '@/assets/novelai_logo.svg'
-import GeminiIcon from '@/assets/gemini-color.svg'
 import { open, save } from '@tauri-apps/plugin-dialog'
 import { checkForAppUpdate } from '@/lib/app-updater'
 import { relaunch } from '@tauri-apps/plugin-process'
@@ -76,7 +75,6 @@ import {
 } from '@/lib/storage-migration'
 import { getAuthTokenRows } from '@/lib/auth-token-list'
 import { AccountStatusCard } from '@/components/account/AccountStatus'
-import { AiTagSettings } from '@/components/settings/AiTagSettings'
 
 const LANGUAGES = [
     { code: 'ko', name: '한국어' },
@@ -101,7 +99,11 @@ export default function Settings() {
     const { t, i18n } = useTranslation()
     const { theme, setTheme } = useThemeStore()
     const { token, tokens, isVerified, anlas, imageGenerationUsage, subscription, isLoading, verifyAndSave, removeToken } = useAuthStore()
-    const { savePath, autoSave, setSavePath, setAutoSave, promptFontSize, setPromptFontSize, useStreaming, setUseStreaming, generationDelay, setGenerationDelay, geminiApiKey, setGeminiApiKey, useAbsolutePath, libraryPath, useAbsoluteLibraryPath, setLibraryPath, imageFormat, setImageFormat, promptWhitespaceMode, setPromptWhitespaceMode, removeEmptyPromptSeparators, setRemoveEmptyPromptSeparators, insertBlankLinesBetweenPromptParts, setInsertBlankLinesBetweenPromptParts, expertCharacterPromptFolderBrowserEnabled, setExpertCharacterPromptFolderBrowserEnabled, expertLibraryFolderBrowserEnabled, setExpertLibraryFolderBrowserEnabled, expertCharacterPromptLayoutEnabled, setExpertCharacterPromptLayoutEnabled, expertCharacterPromptVariantsEnabled, setExpertCharacterPromptVariantsEnabled, expertCharacterPromptGenderIndicatorEnabled, setExpertCharacterPromptGenderIndicatorEnabled, expertMetadataAlwaysAddCharacters, setExpertMetadataAlwaysAddCharacters, characterPromptGenderIndicatorMode, setCharacterPromptGenderIndicatorMode, expertSceneCharacterVariantOverrideEnabled, setExpertSceneCharacterVariantOverrideEnabled, expertSceneCharacterCostumeOverrideEnabled, setExpertSceneCharacterCostumeOverrideEnabled, expertSceneCharacterRepeatEnabled, setExpertSceneCharacterRepeatEnabled, expertSceneCharacterAdditionsEnabled, setExpertSceneCharacterAdditionsEnabled, sceneCharacterAdditionMode, setSceneCharacterAdditionMode, expertSceneMultiCharacterEnabled, setExpertSceneMultiCharacterEnabled, sceneMultiCharacterGenderSelectionMode, setSceneMultiCharacterGenderSelectionMode, expertSceneExportNameEnabled, setExpertSceneExportNameEnabled, sceneExportNamePart, setSceneExportNamePart, expertSceneRandomCharactersEnabled, setExpertSceneRandomCharactersEnabled, expertExifDirectActionEnabled, setExpertExifDirectActionEnabled, expertExifManagerEnabled, setExpertExifManagerEnabled, expertExifQuickActionEnabled, setExpertExifQuickActionEnabled, expertExifAutoSaveEnabled, setExpertExifAutoSaveEnabled, exifAutoSaveName, setExifAutoSaveName, exifAutoSavePath, setExifAutoSavePath, exifOutputFormat, setExifOutputFormat, expertR2DirectUploadEnabled, setExpertR2DirectUploadEnabled, expertR2ExifRemovalEnabled, setExpertR2ExifRemovalEnabled, expertCloudR2Enabled, setExpertCloudR2Enabled, r2ViewMode, setR2ViewMode, r2AccountId, r2AccessKeyId, r2SecretAccessKey, r2Bucket, r2PublicBaseUrl, setR2Config } = useSettingsStore()
+    const { savePath, autoSave, setSavePath, setAutoSave, promptFontSize, setPromptFontSize, useStreaming, setUseStreaming, generationDelay, setGenerationDelay, useAbsolutePath, libraryPath, useAbsoluteLibraryPath, setLibraryPath, imageFormat, setImageFormat, promptWhitespaceMode, setPromptWhitespaceMode, removeEmptyPromptSeparators, setRemoveEmptyPromptSeparators, insertBlankLinesBetweenPromptParts, setInsertBlankLinesBetweenPromptParts, expertCharacterPromptFolderBrowserEnabled, setExpertCharacterPromptFolderBrowserEnabled, expertLibraryFolderBrowserEnabled, setExpertLibraryFolderBrowserEnabled, expertCharacterPromptLayoutEnabled, setExpertCharacterPromptLayoutEnabled, expertCharacterPromptVariantsEnabled, setExpertCharacterPromptVariantsEnabled, expertCharacterPromptGenderIndicatorEnabled, setExpertCharacterPromptGenderIndicatorEnabled, expertMetadataAlwaysAddCharacters, setExpertMetadataAlwaysAddCharacters, characterPromptGenderIndicatorMode, setCharacterPromptGenderIndicatorMode, expertSceneCharacterVariantOverrideEnabled, setExpertSceneCharacterVariantOverrideEnabled, expertSceneCharacterCostumeOverrideEnabled, setExpertSceneCharacterCostumeOverrideEnabled, expertSceneCharacterRepeatEnabled, setExpertSceneCharacterRepeatEnabled, expertSceneCharacterAdditionsEnabled, setExpertSceneCharacterAdditionsEnabled, sceneCharacterAdditionMode, setSceneCharacterAdditionMode, expertSceneMultiCharacterEnabled, setExpertSceneMultiCharacterEnabled, sceneMultiCharacterGenderSelectionMode, setSceneMultiCharacterGenderSelectionMode, expertSceneExportNameEnabled, setExpertSceneExportNameEnabled, sceneExportNamePart, setSceneExportNamePart, expertSceneRandomCharactersEnabled, setExpertSceneRandomCharactersEnabled, expertExifDirectActionEnabled, setExpertExifDirectActionEnabled, expertExifManagerEnabled, setExpertExifManagerEnabled, expertExifQuickActionEnabled, setExpertExifQuickActionEnabled, expertExifAutoSaveEnabled, setExpertExifAutoSaveEnabled, exifAutoSaveName, setExifAutoSaveName, exifAutoSavePath, setExifAutoSavePath, exifOutputFormat, setExifOutputFormat, expertR2DirectUploadEnabled, setExpertR2DirectUploadEnabled, expertR2ExifRemovalEnabled, setExpertR2ExifRemovalEnabled, expertCloudR2Enabled, setExpertCloudR2Enabled, r2ViewMode, setR2ViewMode, r2AccountId, r2AccessKeyId, r2SecretAccessKey, r2Bucket, r2PublicBaseUrl, setR2Config } = useSettingsStore()
+    const koTagHintEnabled = useSettingsStore(state => state.koTagHintEnabled)
+    const koTranslateEnabled = useSettingsStore(state => state.koTranslateEnabled)
+    const setKoTranslateEnabled = useSettingsStore(state => state.setKoTranslateEnabled)
+    const setKoTagHintEnabled = useSettingsStore(state => state.setKoTagHintEnabled)
     const exportImageFormat = useSettingsStore(state => state.exportImageFormat)
     const exportWebpQuality = useSettingsStore(state => state.exportWebpQuality)
     const setExportImageFormat = useSettingsStore(state => state.setExportImageFormat)
@@ -110,7 +112,6 @@ export default function Settings() {
     const generationDelayJitter = useSettingsStore(state => state.generationDelayJitter)
     const setGenerationDelayJitter = useSettingsStore(state => state.setGenerationDelayJitter)
     const { bindings, enabled: shortcutsEnabled, setBinding, resetBinding, resetAllBindings, setEnabled: setShortcutsEnabled } = useShortcutStore()
-    const [localGeminiKey, setLocalGeminiKey] = useState(geminiApiKey)
 
     const [activeSection, setActiveSection] = useState<SettingsSection>('general')
     const [apiTokens, setApiTokens] = useState(() => getAuthTokenRows(token, tokens))
@@ -868,7 +869,7 @@ export default function Settings() {
                                 <div className="space-y-2">
                                     <div className="flex items-center gap-2">
                                         <label className="text-sm font-medium flex items-center gap-2">
-                                            <img src={NovelAILogo} alt="NovelAI" className="h-4 w-4" />
+                                            <img data-no-blur src={NovelAILogo} alt="NovelAI" className="h-4 w-4" />
                                             {t('settingsPage.api.token')}
                                         </label>
                                         <Button
@@ -947,34 +948,24 @@ export default function Settings() {
                                     </p>
                                 </div>
 
-                                <div className="space-y-2 pt-4 border-t border-border/30">
-                                    <label className="text-sm font-medium flex items-center gap-2">
-                                        <img src={GeminiIcon} alt="Gemini" className="h-4 w-4" />
-                                        {t('settingsPage.api.geminiKey', 'Gemini API Key')}
-                                    </label>
-                                    <div className="flex gap-2">
-                                        <Input
-                                            type="password"
-                                            placeholder={t('settingsPage.api.geminiKeyPlaceholder', 'AIza...')}
-                                            value={localGeminiKey}
-                                            onChange={(e) => setLocalGeminiKey(e.target.value)}
-                                            className="flex-1"
-                                        />
-                                        <Button
-                                            onClick={() => {
-                                                setGeminiApiKey(localGeminiKey)
-                                                toast({ title: t('settingsPage.saved'), variant: 'success' })
-                                            }}
-                                        >
-                                            {t('settingsPage.saveBtn')}
-                                        </Button>
-                                    </div>
-                                    <p className="text-xs text-muted-foreground">
-                                        {t('settingsPage.api.geminiKeyHelp', 'Get your API key from Google AI Studio')}
-                                    </p>
-                                </div>
-
-                                <AiTagSettings />
+                                <label className="flex items-center justify-between gap-3 border-t border-border/30 pt-4 text-sm">
+                                    <span>
+                                        {t('settingsPage.koTags.hint', '영어 태그 자동완성 옆에 한글 뜻 보여주기')}
+                                        <span className="block text-xs text-muted-foreground">
+                                            {t('settingsPage.koTags.help', '프롬프트 칸에 한글로 치면 내장 사전에서 영어 태그를 찾아 줍니다.')}
+                                        </span>
+                                    </span>
+                                    <Switch checked={koTagHintEnabled} onChange={event => setKoTagHintEnabled(event.target.checked)} />
+                                </label>
+                                <label className="flex items-center justify-between gap-3 text-sm">
+                                    <span>
+                                        {t('settingsPage.koTags.translate', '한글 문구를 영어 자연어로 번역해서 보여주기')}
+                                        <span className="block text-xs text-muted-foreground">
+                                            {t('settingsPage.koTags.translateHelp', '입력을 멈추면 그 문구를 무료 번역 서비스(MyMemory)로 보내 번역합니다. API 키는 필요 없고, 하루 사용량 제한이 있어요.')}
+                                        </span>
+                                    </span>
+                                    <Switch checked={koTranslateEnabled} onChange={event => setKoTranslateEnabled(event.target.checked)} />
+                                </label>
 
                                 <div className="space-y-3 pt-4 border-t border-border/30">
                                     <label className="text-sm font-medium flex items-center gap-2">

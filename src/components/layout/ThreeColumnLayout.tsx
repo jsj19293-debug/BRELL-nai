@@ -26,13 +26,14 @@ import { describeV5Usage, type SubscriptionInfo } from '@/lib/account-status'
 import {
     Home,
     Film,
-    Globe,
+    FolderOpen,
+    Eye,
+    EyeOff,
     Images,
     Cloud,
     Settings,
     Coins,
     Wand2,
-    Eraser,
     PanelLeft,
     PanelRight,
     Dices,
@@ -111,7 +112,8 @@ export function ThreeColumnLayout({ children }: ThreeColumnLayoutProps) {
     const rightPanelRef = useRef<HTMLElement>(null)
     const resizeCleanupRef = useRef<(() => void) | null>(null)
     const expertCloudR2Enabled = useSettingsStore(state => state.expertCloudR2Enabled)
-    const expertExifManagerEnabled = useSettingsStore(state => state.expertExifManagerEnabled)
+    const blurModeEnabled = useSettingsStore(state => state.blurModeEnabled)
+    const setBlurModeEnabled = useSettingsStore(state => state.setBlurModeEnabled)
     const expertSceneRandomCharactersEnabled = useSettingsStore(state => state.expertSceneRandomCharactersEnabled)
     const sceneRandomCharactersActive = useSettingsStore(state => state.sceneRandomCharactersActive)
     const sceneRandomCharacterCount = useSettingsStore(state => state.sceneRandomCharacterCount)
@@ -263,8 +265,7 @@ export function ThreeColumnLayout({ children }: ThreeColumnLayoutProps) {
         { path: '/', icon: Home, labelKey: 'nav.main' },
         { path: '/scenes', icon: Film, labelKey: 'nav.scenes' },
         { path: '/tools', icon: Wand2, labelKey: 'smartTools.title' },
-        ...(expertExifManagerEnabled ? [{ path: '/exif', icon: Eraser, labelKey: 'nav.exifManager' }] : []),
-        { path: '/web', icon: Globe, labelKey: 'nav.web' },
+        { path: '/folders', icon: FolderOpen, labelKey: 'nav.folders' },
         { path: '/library', icon: Images, labelKey: 'nav.library' },
         { path: '/inbox', icon: Bell, labelKey: 'nav.inbox' },
         ...(expertCloudR2Enabled ? [{ path: '/cloud-r2', icon: Cloud, labelKey: 'nav.cloudR2' }] : []),
@@ -365,7 +366,27 @@ export function ThreeColumnLayout({ children }: ThreeColumnLayoutProps) {
             </PopoverContent>
         </Popover>
     )
-    const accountControls = <div className="flex items-center gap-1">{accountMenu}{accountSettings}<RemoteControl /></div>
+    const blurToggle = (
+        <Tip content={blurModeEnabled
+            ? t('layout.blurModeOn', '블러 모드 켜짐 · 마우스를 올린 이미지만 보여요 (클릭해서 끄기)')
+            : t('layout.blurModeOff', '블러 모드 · 마우스를 올리기 전에는 이미지를 흐리게')}>
+            <button
+                type="button"
+                onClick={() => setBlurModeEnabled(!blurModeEnabled)}
+                aria-pressed={blurModeEnabled}
+                aria-label={t('layout.blurMode', '블러 모드')}
+                className={cn(
+                    'flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border transition-colors',
+                    blurModeEnabled
+                        ? 'border-primary/60 bg-primary/15 text-primary'
+                        : 'border-border/60 bg-muted/30 text-muted-foreground hover:bg-muted/60 hover:text-foreground',
+                )}
+            >
+                {blurModeEnabled ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+            </button>
+        </Tip>
+    )
+    const accountControls = <div className="flex items-center gap-1">{accountMenu}{accountSettings}<RemoteControl />{blurToggle}</div>
 
     return (
         <div className="flex flex-col h-screen bg-background overflow-hidden">
@@ -490,7 +511,7 @@ export function ThreeColumnLayout({ children }: ThreeColumnLayoutProps) {
                     {/* Page Content */}
                     <main data-character-position-host className={cn(
                         "flex-1 relative",
-                        (location.pathname === '/' || location.pathname === '/library' || location.pathname === '/web' || location.pathname === '/inbox') ? "p-0 overflow-hidden" : "p-4 overflow-y-auto"
+                        (location.pathname === '/' || location.pathname === '/library' || location.pathname === '/inbox') ? "p-0 overflow-hidden" : "p-4 overflow-y-auto"
                     )}>
                         {children}
                         {fragmentPanelOpen && (

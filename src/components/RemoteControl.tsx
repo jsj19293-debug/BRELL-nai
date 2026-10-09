@@ -482,7 +482,7 @@ export function RemoteControl() {
                         </label>
                         <Button type="button" disabled={!loaded} onClick={() => { void generateQr() }}>{t('remote.createQr')}</Button>
                         {qrImage && invitation && relayConnected && <div className="rounded-lg bg-white p-3 text-center text-black">
-                            <img src={qrImage} alt={t('remote.qrAlt')} className="mx-auto" />
+                            <img data-no-blur src={qrImage} alt={t('remote.qrAlt')} className="mx-auto" />
                             <div>{t('remote.qrExpires', { time: new Date(invitation.qrExpiresAt).toLocaleString() })}</div>
                             <div>{t('remote.accessExpires', { time: new Date(invitation.accessExpiresAt).toLocaleString() })}</div>
                         </div>}

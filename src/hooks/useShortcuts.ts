@@ -9,7 +9,6 @@ import { shouldIgnoreGlobalNavigation } from '@/lib/utils'
 
 // 커스텀 이벤트 (다이얼로그 열기용)
 export const SHORTCUT_EVENTS = {
-    OPEN_PROMPT_GENERATOR: 'shortcut:openPromptGenerator',
     OPEN_FRAGMENT_DIALOG: 'shortcut:openFragmentDialog',
     OPEN_PARAMETER_SETTINGS: 'shortcut:openParameterSettings',
     OPEN_IMAGE_REFERENCE: 'shortcut:openImageReference',
@@ -17,14 +16,13 @@ export const SHORTCUT_EVENTS = {
     OPEN_PRESET_DIALOG: 'shortcut:openPresetDialog',
     GENERATE_SCENE_REVIEW: 'shortcut:generateSceneReview',
     RESET_FRAGMENT_COUNTERS: 'shortcut:resetFragmentCounters',
-    COPY_DANBOORU_TAGS: 'shortcut:copyDanbooruTags',
 }
 
 export const isSceneReviewDialogOpen = () =>
     Boolean(document.querySelector('[data-scene-review-dialog="true"]'))
 
 // 메뉴 순서 정의
-const MENU_ROUTES = ['/', '/scenes', '/tools', '/web', '/library', '/settings']
+const MENU_ROUTES = ['/', '/scenes', '/tools', '/folders', '/library', '/inbox', '/settings']
 
 export function useShortcuts() {
     const navigate = useNavigate()
@@ -47,12 +45,11 @@ export function useShortcuts() {
                 'navigate:main',
                 'navigate:scenes',
                 'navigate:tools',
-                'navigate:web',
+                'navigate:folders',
                 'navigate:library',
                 'navigate:settings',
                 'navigate:next',
                 'navigate:prev',
-                'open:promptGenerator',
                 'open:fragmentDialog',
                 'open:parameterSettings',
                 'open:imageReference',
@@ -60,7 +57,6 @@ export function useShortcuts() {
                 'open:presetDialog',
                 'action:generate',
                 'action:resetFragmentCounters',
-                'action:copyDanbooruTags',
             ]
 
             for (const action of actions) {
@@ -99,7 +95,7 @@ export function useShortcuts() {
                             'navigate:main': '/',
                             'navigate:scenes': '/scenes',
                             'navigate:tools': '/tools',
-                            'navigate:web': '/web',
+                            'navigate:folders': '/folders',
                             'navigate:library': '/library',
                             'navigate:settings': '/settings',
                         }
@@ -108,12 +104,6 @@ export function useShortcuts() {
                     }
 
                     // 다이얼로그 열기
-                    if (action === 'open:promptGenerator') {
-                        e.preventDefault()
-                        window.dispatchEvent(new CustomEvent(SHORTCUT_EVENTS.OPEN_PROMPT_GENERATOR))
-                        return
-                    }
-
                     if (action === 'open:fragmentDialog') {
                         e.preventDefault()
                         window.dispatchEvent(new CustomEvent(SHORTCUT_EVENTS.OPEN_FRAGMENT_DIALOG))
@@ -195,12 +185,6 @@ export function useShortcuts() {
                         return
                     }
 
-                    if (action === 'action:copyDanbooruTags') {
-                        if (location.pathname !== '/web' || shouldIgnoreGlobalNavigation(e)) return
-                        e.preventDefault()
-                        window.dispatchEvent(new CustomEvent(SHORTCUT_EVENTS.COPY_DANBOORU_TAGS))
-                        return
-                    }
                 }
             }
         }

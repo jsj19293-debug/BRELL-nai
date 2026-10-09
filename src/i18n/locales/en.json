@@ -27,7 +27,7 @@
     "confirm": "I understand"
   },
   "app": {
-    "name": "NAIS2",
+    "name": "NAIS 2 RELL",
     "description": "NovelAI Integrated Studio"
   },
   "shareCard": {
@@ -354,6 +354,7 @@
     "charRefWarning": "Character Reference detected. Extraction supported via Director Tools."
   },
   "nav": {
+    "folders": "Folders",
     "inbox": "Inbox",
     "main": "Main",
     "scenes": "Scene Mode",
@@ -1058,6 +1059,7 @@
       "navigateScenes": "Scene Mode",
       "navigateTools": "Smart Tools",
       "navigateWeb": "Web",
+      "navigateFolders": "Folder manager",
       "navigateLibrary": "Library",
       "navigateSettings": "Settings",
       "navigateNext": "Next Menu",

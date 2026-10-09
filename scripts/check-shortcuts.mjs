@@ -71,9 +71,11 @@ const [shortcutStoreSource, shortcutHookSource, promptPanelSource, layoutSource,
     readFile(new URL('../src/components/layout/ThreeColumnLayout.tsx', import.meta.url), 'utf8'),
     readFile(new URL('../src/components/scene/SceneReviewDialog.tsx', import.meta.url), 'utf8'),
 ])
-assert.match(shortcutStoreSource, /'action:copyDanbooruTags': \{ key: 'e', ctrl: true/)
-assert.match(shortcutHookSource, /COPY_DANBOORU_TAGS/)
-assert.match(shortcutHookSource, /location\.pathname !== '\/web' \|\| shouldIgnoreGlobalNavigation\(e\)/)
+// 웹 탭과 AI 프롬프트 생성은 없앴고, Ctrl+4는 폴더 관리자를 연다.
+assert.match(shortcutStoreSource, /'navigate:folders': \{ key: '4', ctrl: true/)
+assert.doesNotMatch(shortcutStoreSource, /navigate:web|promptGenerator|copyDanbooruTags/)
+assert.match(shortcutHookSource, /'navigate:folders': '\/folders'/)
+assert.doesNotMatch(shortcutHookSource, /'\/web'|OPEN_PROMPT_GENERATOR|COPY_DANBOORU_TAGS/)
 assert.match(shortcutHookSource, /isSceneReviewDialogOpen\(\).*GENERATE_SCENE_REVIEW/s)
 assert.match(promptPanelSource, /isSceneReviewDialogOpen\(\)/)
 assert.match(layoutSource, /isSceneReviewDialogOpen\(\)/)

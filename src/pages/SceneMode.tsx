@@ -77,6 +77,7 @@ import {
     Cloud,
     FolderOpen,
     ChevronDown,
+    RefreshCw,
     Ratio,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
@@ -168,6 +169,8 @@ import { join, pictureDir } from '@tauri-apps/api/path'
 import { Command } from '@tauri-apps/plugin-shell'
 import { save } from '@tauri-apps/plugin-dialog'
 import { ExportDialog } from '@/components/scene/ExportDialog'
+import { SceneWebpExportDialog } from '@/components/scene/SceneWebpExportDialog'
+import { refreshPresetFromFolders } from '@/services/scene-folder-refresh'
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import { RESOLUTION_PRESETS, ResolutionPresetSelector, Resolution } from '@/components/ui/ResolutionSelector'
 import { Switch } from '@/components/ui/switch'
@@ -626,6 +629,34 @@ export default function SceneMode() {
     }
 
     const [showExportDialog, setShowExportDialog] = useState(false)
+    const [showWebpExportDialog, setShowWebpExportDialog] = useState(false)
+    const [isRefreshingFolders, setIsRefreshingFolders] = useState(false)
+
+    // 씬 폴더를 다시 읽어서, 실제로 있는 파일에 맞게 씬 이미지 목록을 고친다.
+    const handleRefreshFromFolders = async () => {
+        if (!activePresetId || isRefreshingFolders) return
+        setIsRefreshingFolders(true)
+        try {
+            const result = await refreshPresetFromFolders(activePresetId)
+            const changed = result.added > 0 || result.removed > 0
+            toast({
+                title: changed
+                    ? t('scene.folderRefresh.changed', '폴더와 맞췄어요: {{added}}장 추가, {{removed}}장 정리', { added: result.added, removed: result.removed })
+                    : t('scene.folderRefresh.same', '폴더와 이미 같아요 (씬 {{n}}개 확인)', { n: result.scenes }),
+                description: result.missingFolders.length > 0
+                    ? t('scene.folderRefresh.missing', '폴더를 찾지 못한 씬: {{names}}', {
+                        names: result.missingFolders.slice(0, 5).join(', ') + (result.missingFolders.length > 5 ? ' …' : ''),
+                    })
+                    : undefined,
+                variant: changed ? 'success' : 'default',
+            })
+        } catch (error) {
+            console.error('Failed to refresh scenes from folders:', error)
+            toast({ title: t('scene.folderRefresh.failed', '폴더를 읽지 못했어요'), description: String(error), variant: 'destructive' })
+        } finally {
+            setIsRefreshingFolders(false)
+        }
+    }
     const [exportScenesFilter, setExportScenesFilter] = useState<'all' | 'selected'>('all')
     const [showDeletePresetDialog, setShowDeletePresetDialog] = useState(false)
     const [showCharacterSequenceDialog, setShowCharacterSequenceDialog] = useState(false)
@@ -880,6 +911,28 @@ export default function SceneMode() {
                                 disabled={!activePreset}
                             >
                                 <FolderOpen className="h-4 w-4" />
+                            </Button>
+                        </Tip>
+                        <Tip content={t('scene.folderRefresh.tip', '폴더에서 새로고침 · 씬 폴더에 실제로 있는 파일로 목록을 다시 맞춥니다')}>
+                            <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-8 w-8 text-muted-foreground hover:text-foreground"
+                                onClick={() => void handleRefreshFromFolders()}
+                                disabled={!activePreset || isGenerating || isRefreshingFolders}
+                                aria-label={t('scene.folderRefresh.label', '폴더에서 새로고침')}
+                            >
+                                <RefreshCw className={cn('h-4 w-4', isRefreshingFolders && 'animate-spin')} />
+                            </Button>
+                        </Tip>
+                        <Tip content={t('scene.webpExport.tip', 'EXIF 제거 + WebP 변환 · 씬 순서대로 번호를 붙여 한 폴더로 내보냅니다')}>
+                            <Button
+                                variant="ghost"
+                                className="h-8 shrink-0 px-2 text-[11px] font-bold text-muted-foreground hover:text-foreground"
+                                onClick={() => setShowWebpExportDialog(true)}
+                                disabled={!activePreset || scenes.length === 0 || isGenerating}
+                            >
+                                WebP
                             </Button>
                         </Tip>
                         {isRenamingPreset ? (
@@ -1183,6 +1236,15 @@ export default function SceneMode() {
                 )}
             </div>
 
+            {activePreset && (
+                <SceneWebpExportDialog
+                    open={showWebpExportDialog}
+                    onOpenChange={setShowWebpExportDialog}
+                    presetId={activePreset.id}
+                    presetName={activePreset.name}
+                    scenes={scenes}
+                />
+            )}
             {
                 activePreset && (
                     <ExportDialog

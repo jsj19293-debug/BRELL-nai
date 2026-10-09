@@ -8,7 +8,10 @@ import { useFragmentStore } from '@/stores/fragment-store'
 import { isPromptCommentLine } from '@/lib/prompt-comments'
 import { formatWeightedPrompt } from '@/lib/prompt-formatting'
 import { hasHangul, koNameOfTag } from '@/lib/ko-tags'
-import { aiMatches, glossaryMatches, type KoTagMatch } from '@/lib/ko-tag-suggest'
+import { glossaryMatches, type KoTagMatch } from '@/lib/ko-tag-suggest'
+import { shouldTranslate, translateKoToEn } from '@/lib/ko-translate'
+import { invoke } from '@tauri-apps/api/core'
+import { useTranslation } from 'react-i18next'
 import { useSettingsStore } from '@/stores/settings-store'
 
 // --- Types ---
@@ -20,11 +23,11 @@ interface SuggestionItem {
     _lower?: string
     /** Korean gloss shown next to the English tag */
     ko?: string
-    /** Suggested by the AI tag lookup (Korean input) */
-    fromAi?: boolean
 }
 
-const AI_SUGGEST_DELAY_MS = 600
+// 한글 문구의 영어 번역은 입력을 잠깐 멈췄을 때 한 번만 물어본다.
+const TRANSLATE_DELAY_MS = 700
+const requestTranslation = (text: string) => invoke<string>('rell_translate_ko_en', { text })
 
 const toKoSuggestion = (match: KoTagMatch): SuggestionItem => ({
     label: match.tag,
@@ -32,7 +35,6 @@ const toKoSuggestion = (match: KoTagMatch): SuggestionItem => ({
     count: match.count,
     type: match.type,
     ko: match.ko || undefined,
-    fromAi: match.source === 'ai',
 })
 
 const DIRECTIVE_SUGGESTIONS: SuggestionItem[] = [
@@ -125,10 +127,10 @@ export function AutocompleteTextarea({
     const onChangeRef = useRef(onChange)
     const onDraftChangeRef = useRef(onDraftChange)
     const autocompleteRequestRef = useRef(0)
-    const aiSuggestTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-    const aiSuggestAbortRef = useRef<AbortController | null>(null)
+    const { t } = useTranslation()
     const koTagHintEnabled = useSettingsStore(state => state.koTagHintEnabled)
-    const [aiSuggestPending, setAiSuggestPending] = useState(false)
+    const translateTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+    const [translatePending, setTranslatePending] = useState(false)
     onChangeRef.current = onChange
     onDraftChangeRef.current = onDraftChange
 
@@ -350,13 +352,11 @@ export function AutocompleteTextarea({
     // --- Autocomplete Logic ---
     const checkAutocomplete = useCallback(async (val: string, el: HTMLTextAreaElement) => {
         const requestId = ++autocompleteRequestRef.current
-        if (aiSuggestTimerRef.current) {
-            clearTimeout(aiSuggestTimerRef.current)
-            aiSuggestTimerRef.current = null
+        if (translateTimerRef.current) {
+            clearTimeout(translateTimerRef.current)
+            translateTimerRef.current = null
         }
-        aiSuggestAbortRef.current?.abort()
-        aiSuggestAbortRef.current = null
-        setAiSuggestPending(false)
+        setTranslatePending(false)
 
         const pos = el.selectionEnd || val.length
 
@@ -427,9 +427,8 @@ export function AutocompleteTextarea({
         // 2. ?쇰컲 ?쒓렇 ?먮룞?꾩꽦
         const word = getCurrentWord(val, pos)
 
-        // Korean input: show English tags with their Korean meaning. The built-in glossary answers
-        // at once; when an AI key is set, its answer is appended after a short pause in typing.
-        // Both are limited to tags that exist in the local Danbooru index.
+        // Korean input: show English tags with their Korean meaning, from the built-in glossary,
+        // limited to tags that exist in the local Danbooru index.
         if (hasHangul(word)) {
             const term = word.trim()
             const showKorean = (items: SuggestionItem[]) => {
@@ -450,26 +449,38 @@ export function AutocompleteTextarea({
                 local = []
             }
             if (requestId !== autocompleteRequestRef.current) return
-            showKorean(local.map(toKoSuggestion))
+            const tagItems = local.map(toKoSuggestion)
+            showKorean(tagItems)
 
-            aiSuggestTimerRef.current = setTimeout(() => {
-                aiSuggestTimerRef.current = null
-                const controller = new AbortController()
-                aiSuggestAbortRef.current = controller
-                setAiSuggestPending(true)
-                void aiMatches(term, controller.signal).then(found => {
+            // 한글 문구를 영어 자연어로: 입력을 멈추면 번역을 받아 목록 맨 아래에 "치환" 줄로 붙인다.
+            if (useSettingsStore.getState().koTranslateEnabled && shouldTranslate(term)) {
+                translateTimerRef.current = setTimeout(() => {
+                    translateTimerRef.current = null
                     if (requestId !== autocompleteRequestRef.current) return
-                    setAiSuggestPending(false)
-                    if (found.length === 0) return
-                    const seen = new Set(local.map(match => match.tag.toLowerCase()))
-                    const merged = [...local, ...found.filter(match => !seen.has(match.tag.toLowerCase()))]
-                    // Keep the highlighted row where it is: the list only grows at the end.
-                    setSuggestions(merged.slice(0, maxSuggestions).map(toKoSuggestion))
-                    setSuggestionMode('tag')
-                    showSuggestionsAtCaret(el, pos)
-                    setIsVisible(true)
-                })
-            }, AI_SUGGEST_DELAY_MS)
+                    setTranslatePending(true)
+                    if (tagItems.length === 0) {
+                        setSuggestions([])
+                        setSuggestionMode('tag')
+                        showSuggestionsAtCaret(el, pos)
+                        setIsVisible(true)
+                    }
+                    void translateKoToEn(term, requestTranslation).then(translated => {
+                        if (requestId !== autocompleteRequestRef.current) return
+                        setTranslatePending(false)
+                        if (!translated) {
+                            if (tagItems.length === 0) setIsVisible(false)
+                            return
+                        }
+                        // 이미 보이는 줄은 그대로 두고 끝에만 붙여서, 고르던 줄이 움직이지 않게 한다.
+                        setSuggestions([...tagItems, { label: translated, value: translated, type: 'translate', ko: term }])
+                        setSuggestionMode('tag')
+                        // 번역 줄만 있을 때는 아무 줄도 고르지 않아서, Enter가 뜻하지 않게 치환하지 않는다.
+                        if (tagItems.length === 0) setSelectedIndex(-1)
+                        showSuggestionsAtCaret(el, pos)
+                        setIsVisible(true)
+                    })
+                }, TRANSLATE_DELAY_MS)
+            }
             return
         }
 
@@ -785,12 +796,11 @@ export function AutocompleteTextarea({
                 e.preventDefault()
                 setSelectedIndex(prev => (prev - 1 + suggestions.length) % suggestions.length)
                 return
-            } else if (e.key === 'Enter' || e.key === 'Tab') {
+            } else if ((e.key === 'Enter' || e.key === 'Tab') && suggestions[selectedIndex]) {
+                // Nothing highlighted (a translation-only list): Enter and Tab keep their normal meaning.
                 e.preventDefault()
                 e.stopPropagation() // Prevent default newline
-                if (suggestions[selectedIndex]) {
-                    insertSuggestionSafely(suggestions[selectedIndex])
-                }
+                insertSuggestionSafely(suggestions[selectedIndex])
                 return
             } else if (e.key === 'Escape') {
                 e.preventDefault()
@@ -807,8 +817,7 @@ export function AutocompleteTextarea({
         return () => {
             autocompleteRequestRef.current++
             if (compositionCommitTimerRef.current) clearTimeout(compositionCommitTimerRef.current)
-            if (aiSuggestTimerRef.current) clearTimeout(aiSuggestTimerRef.current)
-            aiSuggestAbortRef.current?.abort()
+            if (translateTimerRef.current) clearTimeout(translateTimerRef.current)
             flushPendingValue()
         }
     }, [flushPendingValue])
@@ -1012,7 +1021,7 @@ export function AutocompleteTextarea({
             </div>
 
             {/* Autocomplete Dropdown */}
-            {isVisible && suggestions.length > 0 && createPortal(
+            {isVisible && (suggestions.length > 0 || translatePending) && createPortal(
                 <div
                     ref={listRef}
                     className="fixed z-[9999] w-72 bg-popover/95 backdrop-blur-md text-popover-foreground rounded-lg border border-border shadow-xl overflow-hidden animate-in fade-in zoom-in-95 duration-100"
@@ -1036,6 +1045,15 @@ export function AutocompleteTextarea({
                                     insertSuggestionSafely(item)
                                 }}
                             >
+                                {item.type === 'translate' ? (
+                                    <div className="flex min-w-0 flex-col gap-0.5">
+                                        <span className="text-[10px] font-bold tracking-wider text-emerald-300">
+                                            {t('autocomplete.translate', '영어 자연어로 치환')}
+                                        </span>
+                                        <span className="whitespace-normal break-words font-semibold">{item.label}</span>
+                                        <span className="truncate text-[10px] opacity-70">{item.ko}</span>
+                                    </div>
+                                ) : (
                                 <div className="flex flex-col overflow-hidden">
                                     <span className="truncate font-semibold">
                                         {item.type === 'fragment' ? `<${item.label}>` : item.label}
@@ -1057,7 +1075,6 @@ export function AutocompleteTextarea({
                                         )}>
                                             {item.type === 'directive' ? 'syntax' : item.type}
                                         </span>
-                                        {item.fromAi && <span className="font-bold tracking-wider text-violet-300">AI</span>}
                                         {item.type !== 'directive' && (
                                             <span>
                                                 {item.type === 'fragment'
@@ -1067,10 +1084,11 @@ export function AutocompleteTextarea({
                                         )}
                                     </div>
                                 </div>
+                                )}
                             </div>
                         ))}
-                        {aiSuggestPending && (
-                            <div className="px-3 py-1.5 text-[10px] text-muted-foreground">AI…</div>
+                        {translatePending && (
+                            <div className="px-3 py-1.5 text-[10px] text-muted-foreground">{t('autocomplete.translating', '영어로 번역 중…')}</div>
                         )}
                     </div>
                 </div>,

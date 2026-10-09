@@ -280,6 +280,8 @@ interface SceneState {
     importPreset: (preset: ScenePreset) => void
     validateSceneImages: (presetId: string, sceneId: string, validImageIds: string[]) => void
     removeMissingSceneImages: (missingImages: Array<{ presetId: string; sceneId: string; imageId: string }>) => void
+    /** 씬 폴더 새로고침 결과를 반영한다: 씬 id → 새 이미지 목록과 폴더 */
+    applySceneFolderSync: (presetId: string, updates: Record<string, { images: SceneImage[]; folderPath: string }>) => void
 
     // Multi-Select / Edit Mode
     isEditMode: boolean
@@ -1517,6 +1519,19 @@ export const useSceneStore = create<SceneState>()(
                             }
                             : p
                     )
+                }))
+            },
+
+            applySceneFolderSync: (presetId, updates) => {
+                if (Object.keys(updates).length === 0) return
+                set(state => ({
+                    presets: state.presets.map(preset => preset.id !== presetId ? preset : {
+                        ...preset,
+                        scenes: preset.scenes.map(scene => {
+                            const update = updates[scene.id]
+                            return update ? { ...scene, images: update.images, folderPath: update.folderPath } : scene
+                        }),
+                    }),
                 }))
             },
 
