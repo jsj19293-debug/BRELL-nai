@@ -1898,7 +1898,9 @@ function CharacterCard({
                                     onUpdate({ avatar: undefined })
                                 }}
                                 className={cn(
-                                "h-[30px] w-[30px] shrink-0 overflow-hidden rounded-lg border border-transparent flex items-center justify-center cursor-pointer hover:border-primary/50",
+                                // 프사가 있으면 알아보기 쉽게 더 크게 보여 준다.
+                                character.avatar ? "h-12 w-12 rounded-xl" : "h-[30px] w-[30px] rounded-lg",
+                                "shrink-0 overflow-hidden border border-transparent flex items-center justify-center cursor-pointer hover:border-primary/50",
                                 isGenderIconMode && gender === 'male' && "bg-blue-500/15 text-blue-400",
                                 isGenderIconMode && gender === 'female' && "bg-pink-500/15 text-pink-400",
                                 (!isGenderIconMode || gender === 'unknown') && "bg-primary/10 text-primary",
