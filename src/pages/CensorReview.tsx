@@ -52,6 +52,22 @@ export default function CensorReview() {
     const [loading, setLoading] = useState(false)
     const [index, setIndex] = useState<number | null>(null)
     const [source, setSource] = useState<string | null>(null)
+    /** source 가 어느 이미지의 것인지 (경로 + 다시 읽기 번호). 지금 고른 것과 다르면 아직 읽는 중이다. */
+    const [sourceKey, setSourceKey] = useState('')
+    /** 앞뒤 장을 미리 읽어 두는 작은 보관소 (경로 → 내용) */
+    const bytesCache = useRef(new Map<string, Promise<Uint8Array>>())
+    const loadBytes = useCallback((path: string) => {
+        const cache = bytesCache.current
+        let pending = cache.get(path)
+        if (!pending) {
+            pending = readFile(path)
+            pending.catch(() => cache.delete(path))
+            cache.set(path, pending)
+            // 최근 것 몇 장만 둔다.
+            while (cache.size > 6) cache.delete(cache.keys().next().value as string)
+        }
+        return pending
+    }, [])
     const [reloadKey, setReloadKey] = useState(0)
     const [edited, setEdited] = useState(false)
     const [saving, setSaving] = useState(false)
@@ -123,10 +139,11 @@ export default function CensorReview() {
                 const output = censorOutput(current.name)
                 const censoredPath = await join(await censorFolderOf(folderPath), output.name)
                 const useCensored = censoredNames.has(output.name.toLowerCase())
-                const bytes = await readFile(useCensored ? censoredPath : current.path)
+                const bytes = await loadBytes(useCensored ? censoredPath : current.path)
                 if (cancelled) return
                 created = URL.createObjectURL(new Blob([bytes as unknown as BlobPart], { type: mimeOf(current.name) }))
                 setSource(created)
+                setSourceKey(`${current.path}#${reloadKey}`)
             } catch (error) {
                 console.error('Failed to open the image:', error)
                 if (!cancelled) {
@@ -143,6 +160,24 @@ export default function CensorReview() {
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [current?.path, folderPath, reloadKey])
 
+    // 앞뒤 장을 미리 읽어 둔다: 넘길 때 기다림이 없게.
+    useEffect(() => {
+        if (index === null || !folderPath) return
+        let cancelled = false
+        void (async () => {
+            const folder = await censorFolderOf(folderPath)
+            for (const neighbour of [index + 1, index - 1]) {
+                const file = files[neighbour]
+                if (!file || cancelled) continue
+                const output = censorOutput(file.name)
+                const path = censoredNames.has(output.name.toLowerCase()) ? await join(folder, output.name) : file.path
+                void loadBytes(path).catch(() => undefined)
+            }
+        })()
+        return () => { cancelled = true }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [index, files, folderPath])
+
     /** 지금 이미지를 마무리한다: 칠했으면 검열본으로 저장(붉은색), 아니면 확인함(파란색). */
     const commit = useCallback(async (): Promise<boolean> => {
         if (!current || !folderPath) return true
@@ -155,7 +190,9 @@ export default function CensorReview() {
                 setSaving(true)
                 const folder = await censorFolderOf(folderPath)
                 if (!(await exists(folder))) await mkdir(folder, { recursive: true })
-                await writeFile(await join(folder, output.name), bytes)
+                const savedPath = await join(folder, output.name)
+                await writeFile(savedPath, bytes)
+                bytesCache.current.delete(savedPath)
                 const key = output.name.toLowerCase()
                 setCensoredNames(previous => new Set(previous).add(key))
                 setFreshThumbs(previous => {
@@ -208,6 +245,7 @@ export default function CensorReview() {
             const output = censorOutput(current.name)
             const path = await join(await censorFolderOf(folderPath), output.name)
             if (await exists(path)) await remove(path)
+            bytesCache.current.delete(path)
             const key = output.name.toLowerCase()
             setCensoredNames(previous => {
                 const next = new Set(previous)
@@ -386,10 +424,10 @@ export default function CensorReview() {
                             </Tip>
                         </div>
                         <div className="flex min-h-0 flex-1 flex-col p-2">
-                            <CensorEditor ref={editorRef} source={source} brush={brush} onBrushChange={setBrush} onEditedChange={setEdited} />
+                            <CensorEditor ref={editorRef} source={source} brush={brush} onBrushChange={setBrush} onEditedChange={setEdited} busy={!current || sourceKey !== `${current.path}#${reloadKey}`} viewKey={current?.path} />
                         </div>
                         <p className="border-t border-border/40 px-4 py-1.5 text-[11px] text-muted-foreground">
-                            {t('censor.keysHelp3', ', < ← 이전 · . > → 다음 (칠했으면 자동 저장) · Esc 목록 · Ctrl+S 저장 · Ctrl+Z 되돌리기 · 휠 확대/축소 · Ctrl+휠 브러시 크기 · Ctrl+왼쪽 클릭 끌기 이동')}
+                            {t('censor.keysHelp4', ', < ← 이전 · . > → 다음 (칠했으면 자동 저장) · Esc 목록 · Ctrl+S 저장 · Ctrl+Z 되돌리기 · 휠 브러시 크기 · Ctrl+휠 확대/축소 · Ctrl+끌기 이동 · Shift+끌기 지우개')}
                         </p>
                     </>
                 ) : (

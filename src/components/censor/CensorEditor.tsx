@@ -21,13 +21,24 @@ interface CensorEditorProps {
     brush: CensorBrush
     onBrushChange: (change: Partial<CensorBrush>) => void
     onEditedChange?: (edited: boolean) => void
+    /** 다음 이미지를 읽는 중: 화면에는 이전 이미지가 남아 있으므로 칠하지 못하게 한다 */
+    busy?: boolean
+    /** 어느 이미지인지. 같은 이미지를 다시 읽을 때(저장 직후)는 확대 · 위치를 그대로 둔다 */
+    viewKey?: string
 }
 
 /**
  * 검열 탭의 그리기 화면. 도구(솔리드 펜 · 블러 · 지우개, 모양, 크기, 색, 불투명도)는 수동검열 창과 같다.
- * 휠로 확대 · 축소, Ctrl+휠로 브러시 크기, Ctrl+왼쪽 클릭(또는 휠 버튼)으로 끌어서 이동, Ctrl+Z / Ctrl+Y 로 되돌리기.
+ * 휠로 브러시 크기, Ctrl+휠로 확대 · 축소, Shift+왼쪽 끌기로 지우개, Ctrl+왼쪽 클릭(또는 휠 버튼)으로 끌어서 이동, Ctrl+Z / Ctrl+Y 로 되돌리기.
  */
-export const CensorEditor = forwardRef<CensorEditorHandle, CensorEditorProps>(function CensorEditor({ source, brush, onBrushChange, onEditedChange }, ref) {
+export const CensorEditor = forwardRef<CensorEditorHandle, CensorEditorProps>(function CensorEditor({ source, brush, onBrushChange, onEditedChange, busy = false, viewKey }, ref) {
+    const viewKeyRef = useRef(viewKey)
+    viewKeyRef.current = viewKey
+    const decodingRef = useRef(false)
+    const strokeModeRef = useRef<CensorBrushMode>('pen')
+    const lastViewKeyRef = useRef<string | undefined>(undefined)
+    const busyRef = useRef(busy)
+    busyRef.current = busy
     const { t } = useTranslation()
     const baseCanvasRef = useRef<HTMLCanvasElement>(null)
     const editCanvasRef = useRef<HTMLCanvasElement>(null)
@@ -56,21 +67,39 @@ export const CensorEditor = forwardRef<CensorEditorHandle, CensorEditorProps>(fu
 
     // 바탕 이미지를 올린다.
     useEffect(() => {
-        setImageSize(null)
-        setZoom(1)
+        // 새 이미지가 준비될 때까지 이전 이미지를 그대로 보여 준다 (넘길 때 화면이 비었다가 뜨는 깜빡임을 없앤다).
         undoHistoryRef.current = []
         redoHistoryRef.current = []
         setUndoCount(0)
         setRedoCount(0)
         setEdited(false)
-        if (!source) return
+        if (!source) {
+            setImageSize(null)
+            return
+        }
         let cancelled = false
+        decodingRef.current = true
         const image = new Image()
         image.onload = () => {
             if (cancelled) return
+            decodingRef.current = false
             const baseCanvas = baseCanvasRef.current
             const editCanvas = editCanvasRef.current
             if (!baseCanvas || !editCanvas) return
+            // 확대 · 스크롤 · 브러시 커서를 처음 상태로: 이전 장에서 확대해 둔 위치가 남아 새 이미지가 화면 밖에 그려지지 않게 한다.
+            if (lastViewKeyRef.current !== viewKeyRef.current || viewKeyRef.current === undefined) {
+                lastViewKeyRef.current = viewKeyRef.current
+                setZoom(1)
+                pendingPivotRef.current = null
+                if (containerRef.current) {
+                    containerRef.current.scrollLeft = 0
+                    containerRef.current.scrollTop = 0
+                }
+            }
+            if (brushCursorRef.current) {
+                brushCursorRef.current.style.opacity = '0'
+                brushCursorRef.current.style.transform = 'none'
+            }
             baseCanvas.width = image.naturalWidth
             baseCanvas.height = image.naturalHeight
             editCanvas.width = image.naturalWidth
@@ -79,10 +108,12 @@ export const CensorEditor = forwardRef<CensorEditorHandle, CensorEditorProps>(fu
             editCanvas.getContext('2d')?.clearRect(0, 0, editCanvas.width, editCanvas.height)
             setImageSize({ width: image.naturalWidth, height: image.naturalHeight })
         }
+        image.onerror = () => { if (!cancelled) decodingRef.current = false }
         image.src = source
         return () => {
             cancelled = true
             image.onload = null
+            image.onerror = null
         }
     }, [source, setEdited])
 
@@ -124,6 +155,16 @@ export const CensorEditor = forwardRef<CensorEditorHandle, CensorEditorProps>(fu
         isEdited: () => editedRef.current,
         exportIfEdited: async (mime: string) => {
             if (!editedRef.current) return null
+            // 칠했다가 전부 지운 경우: 남은 것이 없으면 칠하지 않은 것으로 본다.
+            const edit = editCanvasRef.current
+            const pixels = edit && edit.width > 0 ? edit.getContext('2d')?.getImageData(0, 0, edit.width, edit.height).data : undefined
+            if (pixels) {
+                let painted = false
+                for (let offset = 3; offset < pixels.length; offset += 4) {
+                    if (pixels[offset] !== 0) { painted = true; break }
+                }
+                if (!painted) return null
+            }
             const output = composeToCanvas()
             if (!output) return null
             const blob = await new Promise<Blob | null>(resolve => output.toBlob(resolve, mime, mime === 'image/png' ? undefined : 0.95))
@@ -231,7 +272,8 @@ export const CensorEditor = forwardRef<CensorEditorHandle, CensorEditorProps>(fu
         if (!canvas || !context) return
         const distance = Math.hypot(to.x - from.x, to.y - from.y)
 
-        if (mode === 'blur') {
+        const strokeMode = strokeModeRef.current
+        if (strokeMode === 'blur') {
             const steps = Math.max(1, Math.ceil(distance / Math.max(2, size / 5)))
             for (let index = 0; index <= steps; index++) {
                 const ratio = index / steps
@@ -241,8 +283,8 @@ export const CensorEditor = forwardRef<CensorEditorHandle, CensorEditorProps>(fu
         }
 
         context.save()
-        context.globalCompositeOperation = mode === 'eraser' ? 'destination-out' : 'source-over'
-        context.globalAlpha = mode === 'pen' ? opacity / 100 : 1
+        context.globalCompositeOperation = strokeMode === 'eraser' ? 'destination-out' : 'source-over'
+        context.globalAlpha = strokeMode === 'pen' ? opacity / 100 : 1
         if (shape === 'square') {
             context.fillStyle = color
             const steps = Math.max(1, Math.ceil(distance / Math.max(1, size / 4)))
@@ -272,8 +314,10 @@ export const CensorEditor = forwardRef<CensorEditorHandle, CensorEditorProps>(fu
         cursor.style.height = `${size * (rect.height / canvas.height)}px`
         cursor.style.transform = `translate(${event.clientX - rect.left}px, ${event.clientY - rect.top}px) translate(-50%, -50%)`
         cursor.style.borderRadius = shape === 'round' ? '9999px' : '0'
-        cursor.style.borderColor = mode === 'eraser' ? 'rgba(248, 113, 113, 0.95)' : 'rgba(255, 255, 255, 0.9)'
-        cursor.style.backgroundColor = mode === 'eraser' ? 'rgba(248, 113, 113, 0.1)' : 'rgba(99, 102, 241, 0.1)'
+        // Shift 를 누르고 있으면 지우개로 동작한다.
+        const erasing = mode === 'eraser' || event.shiftKey
+        cursor.style.borderColor = erasing ? 'rgba(248, 113, 113, 0.95)' : 'rgba(255, 255, 255, 0.9)'
+        cursor.style.backgroundColor = erasing ? 'rgba(248, 113, 113, 0.1)' : 'rgba(99, 102, 241, 0.1)'
         cursor.style.opacity = '1'
     }
     const hideBrushCursor = () => {
@@ -290,11 +334,15 @@ export const CensorEditor = forwardRef<CensorEditorHandle, CensorEditorProps>(fu
             return
         }
         if (event.button !== 0) return
+        // 다음 이미지를 읽는 동안에는 화면에 이전 이미지가 남아 있다: 거기에 칠하면 엉뚱한 이미지로 저장된다.
+        if (busyRef.current || decodingRef.current) return
         const point = getCanvasPoint(event)
         if (!point) return
         event.currentTarget.setPointerCapture(event.pointerId)
         captureUndoSnapshot()
-        if (mode === 'blur') {
+        // Shift+왼쪽 끌기: 고른 도구와 상관없이 이번 획만 지우개
+        strokeModeRef.current = event.shiftKey ? 'eraser' : mode
+        if (strokeModeRef.current === 'blur') {
             if (blurSourceRef.current) blurSourceRef.current.width = 0
             blurSourceRef.current = composeToCanvas()
         }
@@ -361,7 +409,7 @@ export const CensorEditor = forwardRef<CensorEditorHandle, CensorEditorProps>(fu
         container.scrollTop += rect.top + pivot.ratioY * rect.height - pivot.clientY
     }, [zoom])
 
-    // 휠: 확대 · 축소 (마우스가 가리키는 곳 기준) / Ctrl+휠: 브러시 크기 / Shift+휠: 원래대로 스크롤
+    // 휠: 브러시 크기 / Ctrl+휠: 확대 · 축소 (마우스가 가리키는 곳 기준) / Shift+휠: 원래대로 스크롤
     // 휠의 기본 동작(스크롤 · 화면 확대)을 막아야 해서 직접 등록한다.
     const wheelRef = useRef<(event: WheelEvent) => void>(() => undefined)
     wheelRef.current = (event: WheelEvent) => {
@@ -369,11 +417,11 @@ export const CensorEditor = forwardRef<CensorEditorHandle, CensorEditorProps>(fu
         event.preventDefault()
         const up = event.deltaY < 0
         if (event.ctrlKey || event.metaKey) {
-            const step = size >= 100 ? 10 : size >= 40 ? 6 : 4
-            onBrushChange({ size: size + (up ? step : -step) })
+            changeZoom(zoom + (up ? 0.25 : -0.25), event)
             return
         }
-        changeZoom(zoom + (up ? 0.25 : -0.25), event)
+        const step = size >= 100 ? 10 : size >= 40 ? 6 : 4
+        onBrushChange({ size: size + (up ? step : -step) })
     }
     useEffect(() => {
         const container = containerRef.current
@@ -497,7 +545,7 @@ export const CensorEditor = forwardRef<CensorEditorHandle, CensorEditorProps>(fu
             <div ref={containerRef} className="relative min-h-0 flex-1 overflow-auto rounded-lg bg-muted/40 p-2" data-censor-canvas-area>
                 <div className="flex h-max min-h-full w-max min-w-full items-center justify-center">
                     <div
-                        className="relative shrink-0"
+                        className="relative shrink-0 overflow-hidden"
                         style={{
                             width: displaySize ? `${Math.round(displaySize.width * zoom)}px` : '1px',
                             height: displaySize ? `${Math.round(displaySize.height * zoom)}px` : '1px',
