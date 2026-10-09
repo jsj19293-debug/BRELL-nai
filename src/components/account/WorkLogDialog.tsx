@@ -38,7 +38,7 @@ export function WorkLogButton() {
 
     const handleExport = async () => {
         try {
-            const path = await save({ defaultPath: `Nightmare2_작업기록_${dateKey(Date.now())}.csv`, filters: [{ name: 'CSV', extensions: ['csv'] }] })
+            const path = await save({ defaultPath: `Nightmare4_작업기록_${dateKey(Date.now())}.csv`, filters: [{ name: 'CSV', extensions: ['csv'] }] })
             if (!path) return
             // 엑셀이 한글을 제대로 읽도록 BOM을 붙인다.
             await writeTextFile(path, '﻿' + workLogCsv(visible))

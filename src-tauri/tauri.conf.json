@@ -1,6 +1,6 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
-  "productName": "Nightmare 2",
+  "productName": "Nightmare 4",
   "version": "4.0.0",
   "identifier": "com.iztaciyu.nais2forge",
   "build": {
@@ -14,7 +14,7 @@
       {
         "label": "main",
         "create": false,
-        "title": "Nightmare 2",
+        "title": "Nightmare 4",
         "width": 1600,
         "height": 900,
         "resizable": true,

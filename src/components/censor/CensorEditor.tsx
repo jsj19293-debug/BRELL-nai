@@ -1,4 +1,4 @@
-import { forwardRef, useCallback, useEffect, useImperativeHandle, useLayoutEffect, useRef, useState, type PointerEvent as ReactPointerEvent, type WheelEvent as ReactWheelEvent } from 'react'
+import { forwardRef, useCallback, useEffect, useImperativeHandle, useLayoutEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react'
 import { Circle, Droplets, Eraser, Paintbrush, Redo, RotateCcw, Square, Undo, ZoomIn, ZoomOut } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { Button } from '@/components/ui/button'
@@ -25,7 +25,7 @@ interface CensorEditorProps {
 
 /**
  * 검열 탭의 그리기 화면. 도구(솔리드 펜 · 블러 · 지우개, 모양, 크기, 색, 불투명도)는 수동검열 창과 같다.
- * Ctrl+휠로 확대, 휠 버튼으로 끌어서 이동, Ctrl+Z / Ctrl+Y 로 되돌리기.
+ * 휠로 확대 · 축소, Ctrl+휠로 브러시 크기, 휠 버튼으로 끌어서 이동, Ctrl+Z / Ctrl+Y 로 되돌리기.
  */
 export const CensorEditor = forwardRef<CensorEditorHandle, CensorEditorProps>(function CensorEditor({ source, brush, onBrushChange, onEditedChange }, ref) {
     const { t } = useTranslation()
@@ -361,11 +361,38 @@ export const CensorEditor = forwardRef<CensorEditorHandle, CensorEditorProps>(fu
         container.scrollTop += rect.top + pivot.ratioY * rect.height - pivot.clientY
     }, [zoom])
 
-    const handleWheel = (event: ReactWheelEvent<HTMLDivElement>) => {
-        if (!event.ctrlKey) return
+    // 휠: 확대 · 축소 (마우스가 가리키는 곳 기준) / Ctrl+휠: 브러시 크기 / Shift+휠: 원래대로 스크롤
+    // 휠의 기본 동작(스크롤 · 화면 확대)을 막아야 해서 직접 등록한다.
+    const wheelRef = useRef<(event: WheelEvent) => void>(() => undefined)
+    wheelRef.current = (event: WheelEvent) => {
+        if (event.shiftKey || event.altKey || event.deltaY === 0) return
         event.preventDefault()
-        changeZoom(zoom + (event.deltaY < 0 ? 0.25 : -0.25), event)
+        const up = event.deltaY < 0
+        if (event.ctrlKey || event.metaKey) {
+            const step = size >= 100 ? 10 : size >= 40 ? 6 : 4
+            onBrushChange({ size: size + (up ? step : -step) })
+            return
+        }
+        changeZoom(zoom + (up ? 0.25 : -0.25), event)
     }
+    useEffect(() => {
+        const container = containerRef.current
+        if (!container) return
+        const listener = (event: WheelEvent) => wheelRef.current(event)
+        container.addEventListener('wheel', listener, { passive: false })
+        return () => container.removeEventListener('wheel', listener)
+    }, [])
+
+    // 브러시 크기나 확대 배율이 바뀌면 마우스를 움직이지 않아도 커서 크기를 바로 맞춘다.
+    useEffect(() => {
+        const canvas = editCanvasRef.current
+        const cursor = brushCursorRef.current
+        if (!canvas || !cursor || canvas.width === 0) return
+        const rect = canvas.getBoundingClientRect()
+        cursor.style.width = `${size * (rect.width / canvas.width)}px`
+        cursor.style.height = `${size * (rect.height / canvas.height)}px`
+        cursor.style.borderRadius = shape === 'round' ? '9999px' : '0'
+    }, [size, shape, zoom, displaySize])
 
     const toolButton = (value: CensorBrushMode, Icon: typeof Paintbrush, label: string) => (
         <Button
@@ -452,7 +479,7 @@ export const CensorEditor = forwardRef<CensorEditorHandle, CensorEditorProps>(fu
                 </Button>
             </div>
 
-            <div ref={containerRef} className="relative min-h-0 flex-1 overflow-auto rounded-lg bg-muted/40 p-2" onWheel={handleWheel} data-censor-canvas-area>
+            <div ref={containerRef} className="relative min-h-0 flex-1 overflow-auto rounded-lg bg-muted/40 p-2" data-censor-canvas-area>
                 <div className="flex h-max min-h-full w-max min-w-full items-center justify-center">
                     <div
                         className="relative shrink-0"

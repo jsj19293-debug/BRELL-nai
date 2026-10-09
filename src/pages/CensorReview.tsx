@@ -389,7 +389,7 @@ export default function CensorReview() {
                             <CensorEditor ref={editorRef} source={source} brush={brush} onBrushChange={setBrush} onEditedChange={setEdited} />
                         </div>
                         <p className="border-t border-border/40 px-4 py-1.5 text-[11px] text-muted-foreground">
-                            {t('censor.keysHelp', ', < ← 이전 · . > → 다음 (칠했으면 자동 저장) · Esc 목록 · Ctrl+S 저장 · Ctrl+Z 되돌리기 · Ctrl+휠 확대 · 휠 버튼 끌기 이동')}
+                            {t('censor.keysHelp2', ', < ← 이전 · . > → 다음 (칠했으면 자동 저장) · Esc 목록 · Ctrl+S 저장 · Ctrl+Z 되돌리기 · 휠 확대/축소 · Ctrl+휠 브러시 크기 · 휠 버튼 끌기 이동')}
                         </p>
                     </>
                 ) : (

@@ -594,7 +594,7 @@ export default function PromptNotes() {
     }
     const handleExportJson = async () => {
         try {
-            const path = await save({ defaultPath: `Nightmare2_프롬프트_${new Date().toISOString().slice(0, 10)}.json`, filters: [{ name: 'JSON', extensions: ['json'] }] })
+            const path = await save({ defaultPath: `Nightmare4_프롬프트_${new Date().toISOString().slice(0, 10)}.json`, filters: [{ name: 'JSON', extensions: ['json'] }] })
             if (!path) return
             await writeTextFile(path, exportNotesJson(projects, Date.now()))
             toast({ title: t('notes.json.exported', '작품 {{n}}개를 JSON으로 저장했어요', { n: projects.length }), description: path, variant: 'success' })
