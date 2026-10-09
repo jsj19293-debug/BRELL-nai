@@ -1,3 +1,4 @@
+import { sceneDirName } from '@/lib/storage-naming'
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 import { createDeferredJSONStorage, flushAllPendingWrites } from '@/lib/indexed-db'
@@ -574,7 +575,7 @@ export const useSceneStore = create<SceneState>()(
 
                 const { savePath, useAbsolutePath } = useSettingsStore.getState()
                 const rootDirectory = useAbsolutePath && savePath ? savePath : await pictureDir()
-                const configuredOldRoot = await join(rootDirectory, 'NAIS_Scene', safeOldName)
+                const configuredOldRoot = await join(rootDirectory, sceneDirName(), safeOldName)
                 if (await exists(configuredOldRoot)) {
                     sourceRoots.set(normalizePath(configuredOldRoot), configuredOldRoot)
                 }
@@ -761,12 +762,12 @@ export const useSceneStore = create<SceneState>()(
                         oldFolderPath = linkedFolderPath
                         newFolderPath = await join(await dirname(linkedFolderPath), safeNewName)
                     } else if (useAbsolutePath && savePath) {
-                        oldFolderPath = await join(savePath, 'NAIS_Scene', safePresetName, safeOldName)
-                        newFolderPath = await join(savePath, 'NAIS_Scene', safePresetName, safeNewName)
+                        oldFolderPath = await join(savePath, sceneDirName(), safePresetName, safeOldName)
+                        newFolderPath = await join(savePath, sceneDirName(), safePresetName, safeNewName)
                     } else {
                         const baseDir = await pictureDir()
-                        oldFolderPath = await join(baseDir, 'NAIS_Scene', safePresetName, safeOldName)
-                        newFolderPath = await join(baseDir, 'NAIS_Scene', safePresetName, safeNewName)
+                        oldFolderPath = await join(baseDir, sceneDirName(), safePresetName, safeOldName)
+                        newFolderPath = await join(baseDir, sceneDirName(), safePresetName, safeNewName)
                     }
                     
                     if (oldFolderPath.toLocaleLowerCase() === newFolderPath.toLocaleLowerCase()) {
@@ -1717,10 +1718,10 @@ export const useSceneStore = create<SceneState>()(
                         const linkedFolder = scene.folderPath || getSceneFolderFromImages(scene.images)
                         const rootDirectory = useAbsolutePath && savePath ? savePath : await pictureDir()
                         const oldFolder = linkedFolder
-                            || await join(rootDirectory, 'NAIS_Scene', sourcePresetName, sanitizeSceneFolderName(scene.name))
+                            || await join(rootDirectory, sceneDirName(), sourcePresetName, sanitizeSceneFolderName(scene.name))
                         const newFolder = await join(
                             rootDirectory,
-                            'NAIS_Scene',
+                            sceneDirName(),
                             targetPresetName,
                             sanitizeSceneFolderName(scene.name)
                         )

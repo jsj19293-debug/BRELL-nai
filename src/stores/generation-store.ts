@@ -1,3 +1,4 @@
+import { fileNamePrefix, outputDirName } from '@/lib/storage-naming'
 import { create } from 'zustand'
 import { notifyGenerationDone } from '@/lib/generation-notify'
 import { logGeneratedImage } from '@/services/work-log-service'
@@ -664,8 +665,8 @@ export const useGenerationStore = create<GenerationState>()(
                                         typePrefix = 'I2I_'
                                     }
                                     const fileExt = imageFormat === 'webp' ? 'webp' : 'png'
-                                    const fileName = `NAIS_${typePrefix}${Date.now()}.${fileExt}`
-                                    const outputDir = savePath || 'NAIS_Output'
+                                    const fileName = `${fileNamePrefix()}_${typePrefix}${Date.now()}.${fileExt}`
+                                    const outputDir = savePath || outputDirName()
 
                                     let fullPath: string
 

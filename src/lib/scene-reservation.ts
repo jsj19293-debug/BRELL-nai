@@ -2,7 +2,7 @@
  * 예약(대형) 씬 생성: 여러 캐릭터 × 씬 묶음을 한 번에 예약해 차례로 자동 생성한다.
  * 캐릭터마다 레퍼런스를 쓸지 따로 정하고, 레퍼런스를 쓰는 캐릭터는 i2i가 반드시 뒤따른다.
  *
- * 저장 위치 (씬이 원래 저장되는 NAIS_Scene 아래):
+ * 저장 위치 (씬이 원래 저장되는 폴더 아래 — NAIS_Scene 또는 Nightmare_Scene):
  *   예약대형/<캐릭터>_레퍼/<씬 이름>/   레퍼런스로 뽑은 원본
  *   예약대형/<캐릭터>_I2I/<씬 이름>/    그 원본으로 돌린 i2i
  *   예약대형/<캐릭터>/<씬 이름>/        레퍼런스 없이 뽑은 것
@@ -38,7 +38,7 @@ export interface ReservationRequest {
     i2iSeedMode: ReservationSeedMode
     /** 고정일 때 쓸 시드 */
     fixedSeed: number
-    /** 씬이 저장되는 NAIS_Scene 폴더의 전체 경로 */
+    /** 씬이 저장되는 폴더(NAIS_Scene 또는 Nightmare_Scene)의 전체 경로 */
     sceneBasePath: string
 }
 

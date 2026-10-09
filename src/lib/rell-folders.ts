@@ -1,4 +1,5 @@
 /** 폴더 관리자·씬 폴더 새로고침이 쓰는 파일 시스템 호출 모음. */
+import { sceneDirName } from '@/lib/storage-naming'
 import { invoke } from '@tauri-apps/api/core'
 import { join, pictureDir } from '@tauri-apps/api/path'
 import { exists, mkdir } from '@tauri-apps/plugin-fs'
@@ -66,14 +67,14 @@ export async function createWorkFolder(root: string, name: string): Promise<stri
 export async function resolveSceneBaseFolder(): Promise<string> {
     const { savePath, useAbsolutePath } = useSettingsStore.getState()
     const base = useAbsolutePath && savePath ? savePath : await pictureDir()
-    return join(base, 'NAIS_Scene')
+    return join(base, sceneDirName())
 }
 
 /** 씬 이미지가 저장되는 원본 폴더 위치: <저장 위치>/NAIS_Scene/<작품 이름> */
 export async function resolveScenePresetFolder(presetName: string): Promise<string> {
     const { savePath, useAbsolutePath } = useSettingsStore.getState()
     const base = useAbsolutePath && savePath ? savePath : await pictureDir()
-    return join(base, 'NAIS_Scene', sanitizeSceneFolderName(presetName, 'Default'))
+    return join(base, sceneDirName(), sanitizeSceneFolderName(presetName, 'Default'))
 }
 
 interface SceneFolderSource {

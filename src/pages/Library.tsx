@@ -1,3 +1,4 @@
+import { libraryDirName } from '@/lib/storage-naming'
 import { useState, useCallback, useEffect, useMemo, useRef, useSyncExternalStore } from 'react'
 import {
     DndContext,
@@ -255,7 +256,7 @@ function LibraryContent() {
                     }
                 } else {
                     // Relative to Pictures folder
-                    const relPath = libraryPath || 'NAIS_Library'
+                    const relPath = libraryPath || libraryDirName()
                     const existsDir = await exists(relPath, { baseDir: BaseDirectory.Picture })
                     if (!existsDir) {
                         await mkdir(relPath, { baseDir: BaseDirectory.Picture })
@@ -446,7 +447,7 @@ function LibraryContent() {
 
             try {
                 const picturePath = await pictureDir()
-                const relPath = libraryPath || 'NAIS_Library'
+                const relPath = libraryPath || libraryDirName()
                 const libraryDir = useAbsoluteLibraryPath && libraryPath
                     ? libraryPath
                     : await join(picturePath, relPath)
@@ -489,7 +490,7 @@ function LibraryContent() {
                     if (useAbsoluteLibraryPath && libraryPath) {
                         await writeFile(newPath, uint8Array)
                     } else {
-                        const relPath = libraryPath || 'NAIS_Library'
+                        const relPath = libraryPath || libraryDirName()
                         await writeFile(`${relPath}/${fileName}`, uint8Array, { baseDir: BaseDirectory.Picture })
                     }
 
@@ -604,7 +605,7 @@ function LibraryContent() {
         try {
             const folderPath = useAbsoluteLibraryPath && libraryPath
                 ? libraryPath
-                : await join(await pictureDir(), libraryPath || 'NAIS_Library')
+                : await join(await pictureDir(), libraryPath || libraryDirName())
             if (!(await exists(folderPath))) await mkdir(folderPath, { recursive: true })
             await Command.create('explorer', [folderPath]).execute()
         } catch (error) {
@@ -626,7 +627,7 @@ function LibraryContent() {
 
         try {
             const picturePath = await pictureDir()
-            const relPath = libraryPath || 'NAIS_Library'
+            const relPath = libraryPath || libraryDirName()
             const libraryDir = useAbsoluteLibraryPath && libraryPath
                 ? libraryPath
                 : await join(picturePath, relPath)

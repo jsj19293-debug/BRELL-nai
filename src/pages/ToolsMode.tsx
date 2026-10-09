@@ -1,4 +1,5 @@
 
+import { fileNamePrefix, outputDirName } from '@/lib/storage-naming'
 import { useState, useRef, useEffect, useMemo } from 'react'
 import { useShallow } from 'zustand/react/shallow'
 import { useTranslation } from 'react-i18next'
@@ -166,8 +167,8 @@ export default function ToolsMode() {
 
             // Save to configured save path with UPSCALE prefix
             const { savePath, useAbsolutePath } = useSettingsStore.getState()
-            const outputDir = savePath || 'NAIS_Output'
-            const fileName = `NAIS_UPSCALE_${Date.now()}.png`
+            const outputDir = savePath || outputDirName()
+            const fileName = `${fileNamePrefix()}_UPSCALE_${Date.now()}.png`
 
             try {
                 const base64Data = result.replace(/^data:image\/png;base64,/, '')
@@ -236,7 +237,7 @@ export default function ToolsMode() {
 
             // Save to disk
             const { savePath, useAbsolutePath } = useSettingsStore.getState()
-            const outputDir = savePath || 'NAIS_Output'
+            const outputDir = savePath || outputDirName()
             const label = reqType.toUpperCase().replace('-', '_')
             const fileName = `NAIS_${label}_${Date.now()}.png`
 
@@ -288,9 +289,9 @@ export default function ToolsMode() {
             const array = new Uint8Array(binary.length)
             for (let i = 0; i < binary.length; i++) array[i] = binary.charCodeAt(i)
 
-            const filename = `NAIS_Edit_${Date.now()}.png`
+            const filename = `${fileNamePrefix()}_Edit_${Date.now()}.png`
             const { savePath, useAbsolutePath } = useSettingsStore.getState()
-            const outputDir = savePath || 'NAIS_Output'
+            const outputDir = savePath || outputDirName()
 
             if (useAbsolutePath) {
                 // Save to absolute path directly

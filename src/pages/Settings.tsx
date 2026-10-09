@@ -1,3 +1,4 @@
+import { libraryDirName, outputDirName } from '@/lib/storage-naming'
 import { useState, useEffect, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Button } from '@/components/ui/button'
@@ -56,6 +57,7 @@ import NovelAILogo from '@/assets/novelai_logo.svg'
 import { open, save } from '@tauri-apps/plugin-dialog'
 import { checkForAppUpdate } from '@/lib/app-updater'
 import { playDoneSound } from '@/lib/generation-notify'
+import { NaisCompatCard } from '@/components/settings/NaisCompatCard'
 import { relaunch } from '@tauri-apps/plugin-process'
 import { getVersion } from '@tauri-apps/api/app'
 import { useUpdateStore, setCurrentUpdateObject, installPendingUpdate } from '@/stores/update-store'
@@ -223,9 +225,9 @@ export default function Settings() {
 
     // Reset to default Pictures subfolder
     const handleResetToDefault = async () => {
-        setLocalSavePath('NAIS_Output')
+        setLocalSavePath(outputDirName())
         setIsAbsolutePath(false)
-        setSavePath('NAIS_Output', false)
+        setSavePath(outputDirName(), false)
         toast({ title: t('settingsPage.saved'), variant: 'success' })
     }
 
@@ -252,9 +254,9 @@ export default function Settings() {
     }
 
     const handleResetLibraryToDefault = async () => {
-        setLocalLibraryPath('NAIS_Library')
+        setLocalLibraryPath(libraryDirName())
         setIsAbsoluteLibraryPath(false)
-        setLibraryPath('NAIS_Library', false)
+        setLibraryPath(libraryDirName(), false)
         toast({ title: t('settingsPage.saved'), variant: 'success' })
     }
 
@@ -303,8 +305,8 @@ export default function Settings() {
                 }
                 setSavePath(localSavePath, isAbsolutePath)
             } else {
-                const oldRoot = await resolveConfiguredFolder(libraryPath, useAbsoluteLibraryPath, 'NAIS_Library')
-                const newRoot = await resolveConfiguredFolder(localLibraryPath, isAbsoluteLibraryPath, 'NAIS_Library')
+                const oldRoot = await resolveConfiguredFolder(libraryPath, useAbsoluteLibraryPath, libraryDirName())
+                const newRoot = await resolveConfiguredFolder(localLibraryPath, isAbsoluteLibraryPath, libraryDirName())
                 result = await migrateFolders([{ sourcePath: oldRoot, destinationPath: newRoot }])
 
                 const mappings: PathMapping[] = [{ oldPath: oldRoot, newPath: newRoot }]
@@ -1079,6 +1081,7 @@ export default function Settings() {
                                     {t('settingsPage.save.description')}
                                 </p>
                             </div>
+                            <NaisCompatCard />
                             <div className="border border-border/50 rounded-xl p-6 space-y-6 bg-card/30">
                                 <div className="space-y-3">
                                     <div className="flex items-center justify-between">

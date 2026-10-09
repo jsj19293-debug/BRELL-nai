@@ -25,6 +25,8 @@
     "check:translator": "node --experimental-strip-types scripts/check-translator.mjs",
     "check:character-asset": "node --experimental-strip-types scripts/check-character-asset.mjs",
     "check:work-log": "node --experimental-strip-types scripts/check-work-log.mjs",
+    "check:scene-reservation": "node --experimental-strip-types scripts/check-scene-reservation.mjs",
+    "check:storage-names": "node --experimental-strip-types scripts/check-storage-names.mjs",
     "check:installer-continuity": "node scripts/check-installer-continuity.mjs",
     "check:model-capabilities": "node --experimental-strip-types scripts/check-model-capabilities.mjs",
     "check:tokenizer": "node scripts/check-tokenizer.mjs",

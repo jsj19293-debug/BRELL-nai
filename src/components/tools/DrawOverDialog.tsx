@@ -1,3 +1,4 @@
+import { outputDirName } from '@/lib/storage-naming'
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type PointerEvent as ReactPointerEvent, type WheelEvent as ReactWheelEvent } from 'react'
 import { Circle, Download, Droplets, Eraser, Image as ImageIcon, Paintbrush, Redo, RotateCcw, Save as SaveIcon, Square, Undo, ZoomIn, ZoomOut } from 'lucide-react'
 import { save } from '@tauri-apps/plugin-dialog'
@@ -546,7 +547,7 @@ export function DrawOverDialog({ open, sourceImage, outputDirectory, fileNamePre
         if (!dataUrl) return
         try {
             const { savePath, useAbsolutePath } = useSettingsStore.getState()
-            const outputDir = outputDirectory || savePath || 'NAIS_Output'
+            const outputDir = outputDirectory || savePath || outputDirName()
             const fileName = `${fileNamePrefix}_${Date.now()}.png`
             let fullPath: string
 

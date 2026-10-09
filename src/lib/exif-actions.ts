@@ -1,3 +1,4 @@
+import { exifDirName } from '@/lib/storage-naming'
 import { exists, mkdir, readDir, writeFile } from '@tauri-apps/plugin-fs'
 import { join, pictureDir } from '@tauri-apps/api/path'
 import { useSettingsStore } from '@/stores/settings-store'
@@ -45,7 +46,7 @@ export const saveStrippedExifImage = async (image: StrippedImage, sourceName: st
     const configuredPath = useSettingsStore.getState().exifAutoSavePath.trim()
     const directory = isAbsolutePath(configuredPath)
         ? configuredPath
-        : await join(await pictureDir(), configuredPath || 'NAIS_EXIF')
+        : await join(await pictureDir(), configuredPath || exifDirName())
     if (!(await exists(directory))) await mkdir(directory, { recursive: true })
     const filePath = await getAvailableFilePath(directory, getExifOutputName(sourceName, image.extension))
     await writeExifBlob(image, filePath)

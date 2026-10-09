@@ -1,3 +1,4 @@
+import { fileNamePrefix } from '@/lib/storage-naming'
 import { useState } from 'react'
 import { DrawOverDialog } from '@/components/tools/DrawOverDialog'
 import { InpaintingDialog } from '@/components/tools/InpaintingDialog'
@@ -22,7 +23,7 @@ export function DrawOverHost() {
                 open={!!request}
                 sourceImage={request?.image || null}
                 outputDirectory={outputDirectory}
-                fileNamePrefix={sceneOwner ? 'NAIS_SCENE' : 'NAIS_DRAW'}
+                fileNamePrefix={sceneOwner ? `${fileNamePrefix()}_SCENE` : `${fileNamePrefix()}_DRAW`}
                 onOpenChange={open => { if (!open) closeDrawOver() }}
                 onSaved={path => {
                     const owner = findSceneImageOwner(useSceneStore.getState().presets, request?.sourcePath)

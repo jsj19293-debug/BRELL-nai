@@ -1,3 +1,4 @@
+import { outputDirName } from '@/lib/storage-naming'
 import { getVersion } from '@tauri-apps/api/app'
 import { join } from '@tauri-apps/api/path'
 import { exists, mkdir, readDir, remove, writeTextFile } from '@tauri-apps/plugin-fs'
@@ -35,7 +36,7 @@ async function pruneOldBackups(directory: string): Promise<void> {
 
 export async function createUpdateBackup(): Promise<string> {
     const { savePath, useAbsolutePath } = useSettingsStore.getState()
-    const outputDirectory = await resolveConfiguredFolder(savePath, useAbsolutePath, 'NAIS_Output')
+    const outputDirectory = await resolveConfiguredFolder(savePath, useAbsolutePath, outputDirName())
     const backupDirectory = await join(outputDirectory, BACKUP_DIRECTORY_NAME)
 
     if (!(await exists(backupDirectory))) {

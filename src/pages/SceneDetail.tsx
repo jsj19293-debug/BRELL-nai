@@ -1,3 +1,4 @@
+import { sceneDirName } from '@/lib/storage-naming'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { useState, useEffect, useRef, useCallback } from 'react'
@@ -362,7 +363,7 @@ export default function SceneDetail() {
 
             const { savePath, useAbsolutePath } = useSettingsStore.getState()
             const basePath = useAbsolutePath && savePath ? savePath : await pictureDir()
-            const defaultFolderPath = await join(basePath, 'NAIS_Scene', safePresetName, safeSceneName)
+            const defaultFolderPath = await join(basePath, sceneDirName(), safePresetName, safeSceneName)
             const linkedFolderPath = scene.folderPath || getSceneFolderFromImages(scene.images)
             const folderPath = linkedFolderPath && await exists(linkedFolderPath)
                 ? linkedFolderPath

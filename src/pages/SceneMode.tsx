@@ -1,3 +1,4 @@
+import { sceneDirName } from '@/lib/storage-naming'
 import { useState, useEffect, useRef, useCallback, useMemo, memo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
@@ -390,7 +391,7 @@ export default function SceneMode() {
             const safePresetName = activePreset.name.replace(/[<>:"/\\|?*]/g, '_').trim() || 'Default'
             const { savePath, useAbsolutePath } = useSettingsStore.getState()
             const basePath = useAbsolutePath && savePath ? savePath : await pictureDir()
-            const presetPath = await join(basePath, 'NAIS_Scene', safePresetName)
+            const presetPath = await join(basePath, sceneDirName(), safePresetName)
             await mkdir(presetPath, { recursive: true })
             await Command.create('explorer', [presetPath]).execute()
         } catch (error) {

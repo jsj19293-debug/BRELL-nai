@@ -1,3 +1,5 @@
+import { outputDirName, sceneDirName } from '@/lib/storage-naming'
+import { isScenePath } from '@/lib/storage-names'
 import { useTranslation } from 'react-i18next'
 import { useEffect, useState, useCallback, memo, useRef } from 'react'
 import { useShallow } from 'zustand/react/shallow'
@@ -309,7 +311,7 @@ export function HistoryPanel() {
             name,
             path: imagePath,
             timestamp,
-            type: imagePath.includes('NAIS_Scene') ? 'scene' :
+            type: isScenePath(imagePath) ? 'scene' :
                 name.includes('INPAINT_') ? 'inpaint' :
                     name.includes('I2I_') ? 'i2i' :
                         name.includes('UPSCALE_') ? 'upscale' :
@@ -404,7 +406,7 @@ export function HistoryPanel() {
             const picturePath = await pictureDir()
 
             // 1. Load Main Output Images - Always load from Pictures/NAIS_Output first
-            const defaultOutputDir = 'NAIS_Output'
+            const defaultOutputDir = outputDirName()
 
             // Always load from Pictures/NAIS_Output for backward compatibility
             try {
@@ -456,7 +458,7 @@ export function HistoryPanel() {
             }
 
             // 2. Load Scene Images (Recursive) - Always load from Pictures, plus absolute path if set
-            const sceneBaseDir = 'NAIS_Scene'
+            const sceneBaseDir = sceneDirName()
             const scenePicturePath = await pictureDir()
 
             // Helper function to load scene images from a directory (supports presetName/sceneName structure)
@@ -916,7 +918,7 @@ export function HistoryPanel() {
                         }
 
                         const fileName = `NAIS_${Date.now()}.${fileExt}`
-                        const outputDir = savePath || 'NAIS_Output'
+                        const outputDir = savePath || outputDirName()
 
                         let fullPath: string
 
@@ -977,7 +979,7 @@ export function HistoryPanel() {
 
     const handleOpenSaveFolder = async () => {
         try {
-            const configuredPath = savePath || 'NAIS_Output'
+            const configuredPath = savePath || outputDirName()
             const folderPath = useAbsolutePath
                 ? configuredPath
                 : await join(await pictureDir(), configuredPath)

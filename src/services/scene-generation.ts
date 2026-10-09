@@ -1,3 +1,4 @@
+import { fileNamePrefix, sceneDirName } from '@/lib/storage-naming'
 import { toast } from '@/components/ui/use-toast'
 import { useSceneStore } from '@/stores/scene-store'
 import { useGenerationStore } from '@/stores/generation-store'
@@ -369,7 +370,7 @@ export async function generateSceneImage(options: {
         const safeSceneName = scene.name.replace(/[<>:"/\\|?*]/g, '_').trim() || 'Untitled_Scene'
         const { imageFormat } = useSettingsStore.getState()
         const fileExt = imageFormat === 'webp' ? 'webp' : 'png'
-        const fileName = `NAIS_SCENE_${Date.now()}.${fileExt}`
+        const fileName = `${fileNamePrefix()}_SCENE_${Date.now()}.${fileExt}`
 
         try {
             const base64Data = result.imageData.replace(/^data:image\/(png|webp);base64,/, '')
@@ -398,7 +399,7 @@ export async function generateSceneImage(options: {
                 await writeFile(fullPath, binaryData)
             } else if (useAbsolutePath && savePath) {
                 // Save to absolute path: savePath/NAIS_Scene/presetName/sceneName/
-                const naisSceneDir = await join(savePath, 'NAIS_Scene')
+                const naisSceneDir = await join(savePath, sceneDirName())
                 const presetDir = await join(naisSceneDir, safePresetName)
                 const sceneDir = await join(presetDir, safeSceneName)
                 sceneFolderPath = sceneDir
@@ -418,14 +419,14 @@ export async function generateSceneImage(options: {
             } else {
                 // Save to Pictures/NAIS_Scene/presetName/sceneName/
                 const baseDir = await pictureDir()
-                const presetSceneDir = `NAIS_Scene/${safePresetName}/${safeSceneName}`
+                const presetSceneDir = `${sceneDirName()}/${safePresetName}/${safeSceneName}`
 
-                const naisSceneDir = 'NAIS_Scene'
+                const naisSceneDir = sceneDirName()
                 if (!(await exists(naisSceneDir, { baseDir: BaseDirectory.Picture }))) {
                     await mkdir(naisSceneDir, { baseDir: BaseDirectory.Picture })
                 }
 
-                const presetDirPath = `NAIS_Scene/${safePresetName}`
+                const presetDirPath = `${sceneDirName()}/${safePresetName}`
                 if (!(await exists(presetDirPath, { baseDir: BaseDirectory.Picture }))) {
                     await mkdir(presetDirPath, { baseDir: BaseDirectory.Picture })
                 }

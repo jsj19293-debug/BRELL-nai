@@ -65,7 +65,7 @@ const REFERENCE_SEED: Record<ReferenceSeedChoice, { reference: ReservationSeedMo
 
 /**
  * 예약대형: 여러 캐릭터 × 씬 묶음을 한 번에 예약해 차례로 자동 생성하고, 결과를 이 화면에서 본다.
- * 저장 위치는 NAIS_Scene/예약대형/<캐릭터>(_레퍼 · _I2I)/<씬 이름>.
+ * 저장 위치는 <씬 저장 폴더>/예약대형/<캐릭터>(_레퍼 · _I2I)/<씬 이름>.
  */
 export default function SceneReservation() {
     const { t } = useTranslation()

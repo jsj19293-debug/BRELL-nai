@@ -1,3 +1,4 @@
+import { outputDirName, sceneDirName } from '@/lib/storage-naming'
 import { invoke } from '@tauri-apps/api/core'
 import { join, pictureDir } from '@tauri-apps/api/path'
 import type { LibraryItem } from '@/stores/library-store'
@@ -62,14 +63,14 @@ export async function createSaveFolderMigration(
     nextAbsolute: boolean,
 ): Promise<SaveFolderMigration> {
     const pictures = await pictureDir()
-    const oldMain = await resolveConfiguredFolder(currentPath, currentAbsolute, 'NAIS_Output')
-    const newMain = await resolveConfiguredFolder(nextPath, nextAbsolute, 'NAIS_Output')
+    const oldMain = await resolveConfiguredFolder(currentPath, currentAbsolute, outputDirName())
+    const newMain = await resolveConfiguredFolder(nextPath, nextAbsolute, outputDirName())
     const oldScene = currentAbsolute
-        ? await join(oldMain, 'NAIS_Scene')
-        : await join(pictures, 'NAIS_Scene')
+        ? await join(oldMain, sceneDirName())
+        : await join(pictures, sceneDirName())
     const newScene = nextAbsolute
-        ? await join(newMain, 'NAIS_Scene')
-        : await join(pictures, 'NAIS_Scene')
+        ? await join(newMain, sceneDirName())
+        : await join(pictures, sceneDirName())
     const moves: FolderMove[] = []
 
     // When leaving an absolute root, move its nested scene folder first so the

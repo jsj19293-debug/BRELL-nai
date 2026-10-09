@@ -1,3 +1,4 @@
+import { outputDirName } from '@/lib/storage-naming'
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { useShallow } from 'zustand/react/shallow'
 import { useTranslation } from 'react-i18next'
@@ -180,7 +181,7 @@ export default function MainMode() {
                         }
 
                         const fileName = `NAIS_${Date.now()}.${fileExt}`
-                        const outputDir = savePath || 'NAIS_Output'
+                        const outputDir = savePath || outputDirName()
 
                         let fullPath: string
 
@@ -288,7 +289,7 @@ export default function MainMode() {
     const handleOpenFolder = async () => {
         try {
             const { savePath, useAbsolutePath } = useSettingsStore.getState()
-            const finalSavePath = savePath || 'NAIS_Output'
+            const finalSavePath = savePath || outputDirName()
 
             let folderPath: string
             if (useAbsolutePath) {
