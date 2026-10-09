@@ -40,6 +40,8 @@ jobs:
           npm run check:character-bulk-delete
           npm run check:scene-i2i-cycle
           npm run check:scene-webp-export
+          npm run check:prompt-notes
+          npm run check:translator
           npm run check:shortcuts
           npm run check:installer-continuity
 

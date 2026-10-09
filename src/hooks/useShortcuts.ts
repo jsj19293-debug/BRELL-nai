@@ -22,7 +22,7 @@ export const isSceneReviewDialogOpen = () =>
     Boolean(document.querySelector('[data-scene-review-dialog="true"]'))
 
 // 메뉴 순서 정의
-const MENU_ROUTES = ['/', '/scenes', '/tools', '/folders', '/library', '/inbox', '/settings']
+const MENU_ROUTES = ['/', '/scenes', '/tools', '/folders', '/prompts', '/library', '/inbox', '/settings']
 
 export function useShortcuts() {
     const navigate = useNavigate()

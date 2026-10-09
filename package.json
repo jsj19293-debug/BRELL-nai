@@ -21,6 +21,8 @@
     "check:character-bulk-delete": "node --experimental-strip-types scripts/check-character-bulk-delete.mjs",
     "check:scene-i2i-cycle": "node --experimental-strip-types scripts/check-scene-i2i-cycle.mjs",
     "check:scene-webp-export": "node --experimental-strip-types scripts/check-scene-webp-export.mjs",
+    "check:prompt-notes": "node --experimental-strip-types scripts/check-prompt-notes.mjs",
+    "check:translator": "node --experimental-strip-types scripts/check-translator.mjs",
     "check:installer-continuity": "node scripts/check-installer-continuity.mjs",
     "check:model-capabilities": "node --experimental-strip-types scripts/check-model-capabilities.mjs",
     "check:tokenizer": "node scripts/check-tokenizer.mjs",

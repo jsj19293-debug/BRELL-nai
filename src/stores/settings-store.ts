@@ -67,6 +67,8 @@ interface SettingsState {
     sceneWebpExport: SceneWebpExportSettings
     /** 프롬프트 칸에 한글 문구를 치면 영어 번역을 보여준다 (번역 서비스로 그 문구를 보낸다) */
     koTranslateEnabled: boolean
+    /** DeepL API 키. 있으면 번역기가 DeepL을 쓰고, 없으면 키 없는 무료 번역을 쓴다. */
+    deeplApiKey: string
 
     // 씬 모드 "레퍼런스 → i2i" 자동 싸이클
     sceneRefI2iCycleEnabled: boolean
@@ -154,6 +156,7 @@ interface SettingsState {
     setBlurModeFeatureEnabled: (enabled: boolean) => void
     setSceneWebpExport: (config: Partial<SceneWebpExportSettings>) => void
     setKoTranslateEnabled: (enabled: boolean) => void
+    setDeeplApiKey: (key: string) => void
     setSceneRefI2iCycle: (config: Partial<Pick<SettingsState, 'sceneRefI2iCycleEnabled' | 'sceneRefI2iStrength' | 'sceneRefI2iNoise' | 'sceneRefI2iDisableVibes'>>) => void
     setLibraryPath: (path: string, useAbsolute?: boolean) => void
     setImageFormat: (format: 'png' | 'webp') => void
@@ -218,6 +221,7 @@ export const useSettingsStore = create<SettingsState>()(
             blurModeFeatureEnabled: false,
             sceneWebpExport: { ...DEFAULT_SCENE_WEBP_EXPORT },
             koTranslateEnabled: true,
+            deeplApiKey: '',
             sceneRefI2iCycleEnabled: false,
             sceneRefI2iStrength: SCENE_I2I_DEFAULT_STRENGTH,
             sceneRefI2iNoise: 0,
@@ -320,6 +324,7 @@ export const useSettingsStore = create<SettingsState>()(
                 }
             }),
             setKoTranslateEnabled: (koTranslateEnabled) => set({ koTranslateEnabled }),
+            setDeeplApiKey: (key) => set({ deeplApiKey: key.trim() }),
             setSceneRefI2iCycle: (config) => set({
                 ...config,
                 ...(config.sceneRefI2iStrength === undefined ? {} : { sceneRefI2iStrength: clampSceneI2iStrength(config.sceneRefI2iStrength) }),

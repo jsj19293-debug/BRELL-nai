@@ -17,6 +17,8 @@ NAIS2-Forge에 아래 기능을 더하고, 쓰지 않는 기능을 뺀 빌드입
 | EXIF 제거 + WebP 내보내기 (씬 순서대로 1, 2 … / A1, A2 …) | 씬 모드 상단 "WebP" 버튼 |
 | 씬 폴더 새로고침 (폴더에 실제 있는 파일로 목록 다시 맞추기) | 씬 모드 상단 새로고침 버튼 |
 | 폴더 관리자 (작품 폴더 만들기·열기·씬 작품과 연결) | 상단 메뉴 "폴더" |
+| 프롬프트 관리: 작품별 세계관(1만 자) · 로어북(항목당 500자, 150개) · 메모, 이미지 첨부 | 상단 메뉴 "프롬프트" |
+| 번역기: 한국어 → 영어 · 중국어 · 일본어 (DeepL 키가 있으면 DeepL, 없으면 무료 번역으로 1,000자까지) | 프롬프트 관리의 "번역기" 탭 |
 
 ## 뺀 기능
 
@@ -68,6 +70,8 @@ npm run check:ko-tags
 npm run check:character-bulk-delete
 npm run check:scene-i2i-cycle
 npm run check:scene-webp-export
+npm run check:prompt-notes
+npm run check:translator
 npm run build
 cargo test --manifest-path src-tauri/Cargo.toml _native
 ```

@@ -825,17 +825,22 @@ async fn rell_list_subfolders(root: String) -> Result<Vec<RellSubfolder>, String
     .map_err(|error| format!("Folder listing worker failed: {error}"))?
 }
 
-/// 한글 문구를 영어로 옮긴다 (MyMemory 무료 번역, 키 없음). 응답 JSON을 그대로 돌려준다.
-/// 보내는 것은 사용자가 프롬프트 칸에 친 그 문구 하나뿐이다.
+/// 한국어 글 한 조각을 옮긴다 (MyMemory 무료 번역, 키 없음). 응답 JSON을 그대로 돌려준다.
+/// 보내는 것은 사용자가 번역해 달라고 한 그 글뿐이다.
 #[tauri::command]
-async fn rell_translate_ko_en(text: String) -> Result<String, String> {
+async fn rell_translate_free(text: String, target: String) -> Result<String, String> {
     let text = text.trim();
-    if text.is_empty() || text.chars().count() > 300 {
+    // 서비스 한도: 요청 하나에 UTF-8 500바이트
+    if text.is_empty() || text.len() > 500 {
         return Err("INVALID_TEXT".to_string());
     }
+    if !["en", "ja", "zh-CN"].contains(&target.as_str()) {
+        return Err("INVALID_TARGET".to_string());
+    }
+    let langpair = format!("ko|{target}");
     let url = Url::parse_with_params(
         "https://api.mymemory.translated.net/get",
-        &[("q", text), ("langpair", "ko|en")],
+        &[("q", text), ("langpair", langpair.as_str())],
     )
     .map_err(|_| "INVALID_URL".to_string())?;
     let client = reqwest::Client::builder()
@@ -844,6 +849,54 @@ async fn rell_translate_ko_en(text: String) -> Result<String, String> {
         .map_err(|error| format!("NETWORK_ERROR: {error}"))?;
     let response = client
         .get(url.as_str())
+        .send()
+        .await
+        .map_err(|error| format!("NETWORK_ERROR: {error}"))?;
+    if !response.status().is_success() {
+        return Err(format!("HTTP_{}", response.status().as_u16()));
+    }
+    response
+        .text()
+        .await
+        .map_err(|error| format!("NETWORK_ERROR: {error}"))
+}
+
+/// DeepL로 한국어 글 여러 조각을 한 번에 옮긴다. 키는 사용자가 설정에 넣은 것이고 DeepL로만 보낸다.
+/// 무료 키(":fx"로 끝남)와 유료 키는 서버 주소가 다르다.
+#[tauri::command]
+async fn rell_translate_deepl(
+    api_key: String,
+    texts: Vec<String>,
+    target: String,
+) -> Result<String, String> {
+    let api_key = api_key.trim();
+    if api_key.is_empty() {
+        return Err("HTTP_403".to_string());
+    }
+    if texts.is_empty() || texts.len() > 2_000 {
+        return Err("INVALID_TEXT".to_string());
+    }
+    if !["EN-US", "EN-GB", "JA", "ZH-HANS", "ZH-HANT"].contains(&target.as_str()) {
+        return Err("INVALID_TARGET".to_string());
+    }
+    let endpoint = if api_key.ends_with(":fx") {
+        "https://api-free.deepl.com/v2/translate"
+    } else {
+        "https://api.deepl.com/v2/translate"
+    };
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(60))
+        .build()
+        .map_err(|error| format!("NETWORK_ERROR: {error}"))?;
+    let response = client
+        .post(endpoint)
+        .header("Authorization", format!("DeepL-Auth-Key {api_key}"))
+        .json(&serde_json::json!({
+            "text": texts,
+            "source_lang": "KO",
+            "target_lang": target,
+            "preserve_formatting": true,
+        }))
         .send()
         .await
         .map_err(|error| format!("NETWORK_ERROR: {error}"))?;
@@ -2806,7 +2859,8 @@ pub fn run() {
             export_scene_images_folder,
             rell_list_image_files,
             rell_list_subfolders,
-            rell_translate_ko_en,
+            rell_translate_free,
+            rell_translate_deepl,
             inbox_http,
             inbox_file_read,
             inbox_file_write,

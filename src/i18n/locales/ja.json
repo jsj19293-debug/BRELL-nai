@@ -353,6 +353,7 @@
     "charRefWarning": "キャラクター参照が検出されました。Director Tools経由で抽出がサポートされています。"
   },
   "nav": {
+    "prompts": "プロンプト",
     "folders": "フォルダ",
     "inbox": "通知",
     "main": "メイン",

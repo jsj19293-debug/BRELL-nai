@@ -354,6 +354,7 @@
     "charRefWarning": "캐릭터 레퍼런스가 감지되었습니다. Director Tools를 통해 추출이 지원됩니다."
   },
   "nav": {
+    "prompts": "프롬프트",
     "folders": "폴더",
     "inbox": "알림",
     "main": "메인",

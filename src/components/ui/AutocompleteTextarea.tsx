@@ -9,8 +9,8 @@ import { isPromptCommentLine } from '@/lib/prompt-comments'
 import { formatWeightedPrompt } from '@/lib/prompt-formatting'
 import { hasHangul, koNameOfTag } from '@/lib/ko-tags'
 import { glossaryMatches, type KoTagMatch } from '@/lib/ko-tag-suggest'
-import { shouldTranslate, translateKoToEn } from '@/lib/ko-translate'
-import { invoke } from '@tauri-apps/api/core'
+import { shouldTranslate } from '@/lib/ko-translate'
+import { translatePromptPhrase } from '@/services/translate-service'
 import { useTranslation } from 'react-i18next'
 import { useSettingsStore } from '@/stores/settings-store'
 
@@ -27,7 +27,6 @@ interface SuggestionItem {
 
 // 한글 문구의 영어 번역은 입력을 잠깐 멈췄을 때 한 번만 물어본다.
 const TRANSLATE_DELAY_MS = 700
-const requestTranslation = (text: string) => invoke<string>('rell_translate_ko_en', { text })
 
 const toKoSuggestion = (match: KoTagMatch): SuggestionItem => ({
     label: match.tag,
@@ -464,7 +463,7 @@ export function AutocompleteTextarea({
                         showSuggestionsAtCaret(el, pos)
                         setIsVisible(true)
                     }
-                    void translateKoToEn(term, requestTranslation).then(translated => {
+                    void translatePromptPhrase(term).then(translated => {
                         if (requestId !== autocompleteRequestRef.current) return
                         setTranslatePending(false)
                         if (!translated) {

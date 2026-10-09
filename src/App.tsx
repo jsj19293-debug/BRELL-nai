@@ -20,6 +20,7 @@ const Settings = lazy(() => import('@/pages/Settings'))
 const ToolsMode = lazy(() => import('@/pages/ToolsMode'))
 const ExifManager = lazy(() => import('@/pages/ExifManager'))
 const FolderManager = lazy(() => import('@/pages/FolderManager'))
+const PromptNotes = lazy(() => import('@/pages/PromptNotes'))
 const Inbox = lazy(() => import('@/pages/Inbox'))
 
 function AppContent() {
@@ -64,6 +65,7 @@ function AppContent() {
                         <Route path="/tools" element={<ToolsMode />} />
                         <Route path="/exif" element={<ExifManager />} />
                         <Route path="/folders" element={<FolderManager />} />
+                        <Route path="/prompts" element={<PromptNotes />} />
                         <Route path="/library" element={<Library />} />
                         <Route path="/inbox" element={<Inbox />} />
                         <Route path="/cloud-r2" element={<CloudR2 />} />
