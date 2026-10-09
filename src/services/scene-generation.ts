@@ -10,6 +10,7 @@ import { pictureDir, join } from '@tauri-apps/api/path'
 import { buildGenerationRequest } from '@/lib/generation-request'
 import { getModelCapabilities } from '@/lib/model-capabilities'
 import { useCharacterStore } from '@/stores/character-store'
+import { resolveCharacterAssetOverride } from '@/lib/character-asset-presets'
 import { getRandomCharacterCandidates, pickRandomCharacters } from '@/lib/random-character-selection'
 import { SCENE_IMAGE_GENERATED_EVENT } from '@/lib/scene-review-generation'
 import {
@@ -112,16 +113,26 @@ export async function generateSceneImage(options: {
             Math.min(latestSettingsStore.sceneRandomCharacterCount, maxCharacterPrompts),
         ).map(character => character.id)
         : null
+    // 캐릭터씬(캐릭터 에셋 뽑기로 만든 프리셋)은 그 캐릭터 하나와, 만들 때 고른 레퍼런스만 쓴다.
+    const characterAssetOverride = !sequenceMode && !options.draft
+        ? resolveCharacterAssetOverride(
+            latestSceneStore.presets.find(preset => preset.id === activePresetId),
+            latestSettingsStore.characterAssetScenesEnabled,
+            latestPromptStore.characters.map(character => character.id),
+            referenceState.characterImages.map(image => image.id),
+        )
+        : null
     const characterPromptIds = secondPass
         // 2단계는 1단계와 같은 캐릭터를 쓴다 (랜덤 캐릭터를 다시 뽑지 않는다).
         ? secondPass.characterPromptIds
         : sequenceMode
             ? sequenceEntry.characterPromptIds
-            : randomCharacterIds
+            : characterAssetOverride?.characterPromptIds
+                ?? randomCharacterIds
                 ?? latestPromptStore.characters.filter(character => character.enabled).map(character => character.id)
     // 2단계에서는 캐릭터 레퍼런스를 보내지 않는다. 사용자의 레퍼런스 켜짐 상태 자체는 바꾸지 않는다.
     const finalCharacterReferenceIds = secondPass ? [] : uniqueIds([
-        ...characterReferenceIds,
+        ...(characterAssetOverride ? characterAssetOverride.characterReferenceIds : characterReferenceIds),
         ...(usesCustomSceneCharacters ? [] : sceneAddition?.characterReferenceIds || []),
     ])
     const finalVibeReferenceIds = secondPass?.disableVibes ? [] : uniqueIds([

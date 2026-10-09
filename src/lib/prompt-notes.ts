@@ -246,3 +246,89 @@ export function loreTxtFileName(projectName: string): string {
     const safe = projectName.replace(/[<>:"/\\|?*\u0000-\u001f]/g, '_').trim().replace(/[. ]+$/, '')
     return `${safe || '로어북'}_로어북.txt`
 }
+
+// ---------------------------------------------------------------------------
+// 전체 JSON 저장 · 불러오기 (모든 작품의 세계관 · 로어북 · 키워드 · 메모 · 이미지 경로)
+// ---------------------------------------------------------------------------
+
+export const NOTES_JSON_KIND = 'nais2-rell-prompt-notes'
+
+export function exportNotesJson(projects: readonly PromptProject[], now: number): string {
+    return JSON.stringify({ kind: NOTES_JSON_KIND, version: 1, exportedAt: now, projects }, null, 2)
+}
+
+const text = (value: unknown) => (typeof value === 'string' ? value : '')
+const images = (value: unknown) =>
+    (Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string' && !!item.trim()) : []).slice(0, IMAGES_MAX_PER_ITEM)
+const stamp = (value: unknown, fallback: number) => (typeof value === 'number' && Number.isFinite(value) ? value : fallback)
+
+/**
+ * 저장한 JSON을 읽는다. 손으로 고친 파일도 받아들이도록 빠진 칸은 채우고 한도를 넘는 것은 자른다.
+ * 형식이 다르면 INVALID_JSON / NOT_PROMPT_NOTES 오류를 던진다.
+ */
+export function parseNotesJson(json: string): PromptProject[] {
+    let data: { kind?: unknown; projects?: unknown }
+    try {
+        data = JSON.parse(json.replace(/^\uFEFF/, ''))
+    } catch {
+        throw new Error('INVALID_JSON')
+    }
+    if (!data || data.kind !== NOTES_JSON_KIND || !Array.isArray(data.projects)) throw new Error('NOT_PROMPT_NOTES')
+
+    const now = Date.now()
+    let counter = 0
+    const freshId = () => `import-${now.toString(36)}-${(counter++).toString(36)}`
+    const list = (value: unknown) => (Array.isArray(value) ? value.filter((item): item is Record<string, unknown> => !!item && typeof item === 'object') : [])
+
+    return list(data.projects).slice(0, PROJECT_MAX_COUNT).map(raw => ({
+        id: text(raw.id) || freshId(),
+        name: clampChars(text(raw.name).trim(), PROJECT_NAME_MAX_CHARS) || '새 작품',
+        world: clampChars(text(raw.world), WORLD_MAX_CHARS),
+        worldImages: images(raw.worldImages),
+        lore: list(raw.lore).slice(0, LORE_MAX_ENTRIES).map(entry => normalizeLore({
+            id: text(entry.id) || freshId(),
+            title: text(entry.title),
+            content: text(entry.content),
+            keywords: text(entry.keywords),
+            images: images(entry.images),
+            updatedAt: stamp(entry.updatedAt, now),
+        })),
+        memos: list(raw.memos).slice(0, MEMO_MAX_COUNT).map(memo => normalizeMemo({
+            id: text(memo.id) || freshId(),
+            title: text(memo.title),
+            content: text(memo.content),
+            images: images(memo.images),
+            updatedAt: stamp(memo.updatedAt, now),
+        })),
+        createdAt: stamp(raw.createdAt, now),
+        updatedAt: stamp(raw.updatedAt, now),
+    }))
+}
+
+/**
+ * 불러온 작품들을 지금 목록 뒤에 더한다. 있던 작품은 건드리지 않는다:
+ * id가 겹치면 새 id를 주고, 이름이 겹치면 "(2)"를 붙인다. 최대 개수를 넘는 것은 넣지 않는다.
+ */
+export function mergeImportedProjects(
+    current: readonly PromptProject[],
+    imported: readonly PromptProject[],
+    max: number,
+    makeId: () => string,
+): { projects: PromptProject[]; added: number } {
+    const ids = new Set(current.map(project => project.id))
+    const names = new Set(current.map(project => project.name.toLocaleLowerCase()))
+    const projects = [...current]
+    let added = 0
+    for (const project of imported) {
+        if (projects.length >= max) break
+        let id = project.id
+        while (ids.has(id)) id = makeId()
+        ids.add(id)
+        let name = project.name
+        for (let index = 2; names.has(name.toLocaleLowerCase()); index++) name = `${project.name} (${index})`
+        names.add(name.toLocaleLowerCase())
+        projects.push({ ...project, id, name })
+        added++
+    }
+    return { projects, added }
+}

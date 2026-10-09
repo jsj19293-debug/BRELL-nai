@@ -1985,6 +1985,7 @@ function ShortcutRow({ action, binding, allBindings, isEditing, recordedBinding,
     const checkConflict = (newBinding: KeyBinding): ShortcutAction | null => {
         for (const [otherAction, otherBinding] of Object.entries(allBindings)) {
             if (otherAction === action) continue // 자기 자신은 제외
+            if (!otherBinding.key) continue // 지정하지 않은 단축키와는 겹치지 않는다
 
             // 키 조합이 정확히 같은지 확인
             if (

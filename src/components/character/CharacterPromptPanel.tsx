@@ -27,6 +27,7 @@ import {
     Menu,
     CircleHelp,
     ListChecks,
+    Clapperboard,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -72,6 +73,7 @@ import { getModelCapabilities } from '@/lib/model-capabilities'
 import { COSTUME_PROMPT_MARKER, splitCostumePrompt } from '@/lib/costume-prompt'
 import { toast } from '@/components/ui/use-toast'
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
+import { CharacterAssetDialog } from '@/components/character/CharacterAssetDialog'
 import { expandSelectionToStacks, pruneSelection, toggleSelectAll } from '@/lib/character-bulk-delete'
 import { CharacterPositionBoard } from '@/components/character/CharacterPositionBoard'
 import {
@@ -212,6 +214,8 @@ export function CharacterPromptPanel({ open, onOpenChange }: CharacterPromptPane
     const [selectedGroupId, setSelectedGroupId] = useState<string | null>(null)
     // 일괄 삭제: 선택 모드에서 카드마다 체크박스를 보여주고, 체크한 것을 한 번에 지운다.
     const [selectMode, setSelectMode] = useState(false)
+    const [assetDialogOpen, setAssetDialogOpen] = useState(false)
+    const characterAssetScenesEnabled = useSettingsStore(state => state.characterAssetScenesEnabled)
     const [selectedCharacterIds, setSelectedCharacterIds] = useState<Set<string>>(new Set())
     const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false)
     const [genderFilter, setGenderFilter] = useState<'all' | CharacterGender>('all')
@@ -1274,6 +1278,20 @@ export function CharacterPromptPanel({ open, onOpenChange }: CharacterPromptPane
                             <ListChecks className="h-4 w-4" />
                         </Button>
                     </Tip>
+                    {characterAssetScenesEnabled && (
+                        <Tip content={t('characterAsset.tip', '캐릭터 에셋 뽑기 · 작품의 씬 전체를 캐릭터 이름으로 복제합니다')}>
+                            <Button
+                                type="button"
+                                variant="ghost"
+                                size="icon"
+                                className="h-8 w-8 shrink-0"
+                                aria-label={t('characterAsset.title', '캐릭터 에셋 뽑기')}
+                                onClick={() => setAssetDialogOpen(true)}
+                            >
+                                <Clapperboard className="h-4 w-4" />
+                            </Button>
+                        </Tip>
+                    )}
                     {expertCharacterPromptGenderIndicatorEnabled && (
                         <Popover>
                             <PopoverTrigger asChild>

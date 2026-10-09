@@ -5,6 +5,7 @@ import { useShortcutStore, matchesBinding, ShortcutAction } from '@/stores/short
 import { useGenerationStore } from '@/stores/generation-store'
 import { useFragmentStore } from '@/stores/fragment-store'
 import { useSceneStore } from '@/stores/scene-store'
+import { useSettingsStore } from '@/stores/settings-store'
 import { shouldIgnoreGlobalNavigation } from '@/lib/utils'
 
 // 커스텀 이벤트 (다이얼로그 열기용)
@@ -57,6 +58,7 @@ export function useShortcuts() {
                 'open:presetDialog',
                 'action:generate',
                 'action:resetFragmentCounters',
+                'action:toggleBlur',
             ]
 
             for (const action of actions) {
@@ -175,6 +177,15 @@ export function useShortcuts() {
                             sceneState.startNewGenerationSession()
                             return
                         }
+                    }
+
+                    // 블러 모드 켜고 끄기. 기능이 꺼져 있으면 기능부터 켠다 (그러면 블러가 걸린 채로 시작한다).
+                    if (action === 'action:toggleBlur') {
+                        e.preventDefault()
+                        const settings = useSettingsStore.getState()
+                        if (!settings.blurModeFeatureEnabled) settings.setBlurModeFeatureEnabled(true)
+                        else settings.setBlurModeEnabled(!settings.blurModeEnabled)
+                        return
                     }
 
                     // 순차 카운터 리셋

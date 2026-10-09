@@ -8,7 +8,7 @@ import { useSettingsStore } from '@/stores/settings-store'
 import { calculateGenerationDelay } from '@/lib/generation-delay'
 import { useAuthStore } from '@/stores/auth-store'
 import { useCharacterStore } from '@/stores/character-store'
-import { sendSystemNotification } from '@/lib/system-notification'
+import { notifyGenerationDone } from '@/lib/generation-notify'
 import { generateSceneImage } from '@/services/scene-generation'
 import { isRemoteSceneQueueRunning } from '@/services/remote-scene-queue'
 import {
@@ -161,7 +161,7 @@ export function useSceneGeneration() {
                 // Release character/vibe base64 from memory after all scene generation completes
                 useCharacterStore.getState().releaseImageData(true)
                 toast({ title: t('generate.complete', '생성 완료'), description: t('generate.allComplete', '모든 예약된 작업이 완료되었습니다.'), variant: 'success' })
-                void sendSystemNotification(t('generate.complete', '생성 완료'), t('generate.allComplete', '모든 예약된 작업이 완료되었습니다.'))
+                notifyGenerationDone(t('generate.complete', '생성 완료'), t('generate.allComplete', '모든 예약된 작업이 완료되었습니다.'))
                 return
             }
 

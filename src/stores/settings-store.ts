@@ -69,6 +69,12 @@ interface SettingsState {
     koTranslateEnabled: boolean
     /** DeepL API 키. 있으면 번역기가 DeepL을 쓰고, 없으면 키 없는 무료 번역을 쓴다. */
     deeplApiKey: string
+    /** 생성이 끝나면 PC 알림을 보낸다 */
+    generationDoneNotify: boolean
+    /** 생성이 끝나면 알림음을 낸다 */
+    generationDoneSound: boolean
+    /** 캐릭터 에셋 뽑기(캐릭터씬) 기능 사용 */
+    characterAssetScenesEnabled: boolean
 
     // 씬 모드 "레퍼런스 → i2i" 자동 싸이클
     sceneRefI2iCycleEnabled: boolean
@@ -157,6 +163,8 @@ interface SettingsState {
     setSceneWebpExport: (config: Partial<SceneWebpExportSettings>) => void
     setKoTranslateEnabled: (enabled: boolean) => void
     setDeeplApiKey: (key: string) => void
+    setGenerationDoneAlerts: (config: Partial<Pick<SettingsState, 'generationDoneNotify' | 'generationDoneSound'>>) => void
+    setCharacterAssetScenesEnabled: (enabled: boolean) => void
     setSceneRefI2iCycle: (config: Partial<Pick<SettingsState, 'sceneRefI2iCycleEnabled' | 'sceneRefI2iStrength' | 'sceneRefI2iNoise' | 'sceneRefI2iDisableVibes'>>) => void
     setLibraryPath: (path: string, useAbsolute?: boolean) => void
     setImageFormat: (format: 'png' | 'webp') => void
@@ -222,6 +230,9 @@ export const useSettingsStore = create<SettingsState>()(
             sceneWebpExport: { ...DEFAULT_SCENE_WEBP_EXPORT },
             koTranslateEnabled: true,
             deeplApiKey: '',
+            generationDoneNotify: true,
+            generationDoneSound: false,
+            characterAssetScenesEnabled: true,
             sceneRefI2iCycleEnabled: false,
             sceneRefI2iStrength: SCENE_I2I_DEFAULT_STRENGTH,
             sceneRefI2iNoise: 0,
@@ -325,6 +336,8 @@ export const useSettingsStore = create<SettingsState>()(
             }),
             setKoTranslateEnabled: (koTranslateEnabled) => set({ koTranslateEnabled }),
             setDeeplApiKey: (key) => set({ deeplApiKey: key.trim() }),
+            setGenerationDoneAlerts: (config) => set(config),
+            setCharacterAssetScenesEnabled: (characterAssetScenesEnabled) => set({ characterAssetScenesEnabled }),
             setSceneRefI2iCycle: (config) => set({
                 ...config,
                 ...(config.sceneRefI2iStrength === undefined ? {} : { sceneRefI2iStrength: clampSceneI2iStrength(config.sceneRefI2iStrength) }),

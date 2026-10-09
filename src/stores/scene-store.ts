@@ -8,6 +8,7 @@ import { notifySceneQueueChanged } from '@/lib/scene-queue-events'
 import { flushScenePromptDrafts } from '@/lib/scene-prompt-drafts'
 import { getSceneFolderFromImages, replaceSceneFolderPrefix, replaceSceneFolderPrefixes, sanitizeSceneFolderName } from '@/lib/scene-path'
 import { getUniqueDuplicateName } from '@/lib/scene-copy-name'
+import { planCharacterAssetPresets, type AssetCharacter, type CharacterAssetInfo } from '@/lib/character-asset-presets'
 import { createHistoryIndexScope, moveHistoryIndexPathPrefix } from '@/lib/history-index'
 import { normalizeCostumePromptMarkersForExport } from '@/lib/costume-prompt'
 import { buildSceneQueueOrder, findNextQueuedSceneIndex } from '@/lib/scene-queue-order'
@@ -53,6 +54,8 @@ export interface ScenePreset {
     name: string
     scenes: SceneCard[]
     createdAt: number
+    /** 캐릭터 에셋 뽑기로 만든 캐릭터씬이면 그 캐릭터와 레퍼런스 정보 */
+    characterAsset?: CharacterAssetInfo
 }
 
 export interface SceneCharacterSequenceEntry {
@@ -190,6 +193,12 @@ interface SceneState {
     // Actions - Presets
     addPreset: (name: string) => void
     duplicatePreset: (id: string) => void
+    /** 고른 작품들의 씬 전체를 캐릭터 이름으로 복제한다. 만든 프리셋 id와 건너뛴 이름을 돌려준다. */
+    createCharacterAssetPresets: (
+        sourcePresetIds: string[],
+        characters: AssetCharacter[],
+        options: { referenceIds: string[]; queueCount: number },
+    ) => { createdIds: string[]; skipped: string[] }
     deletePreset: (id: string) => void
     renamePreset: (id: string, name: string) => Promise<number>
     reorderPresets: (oldIndex: number, newIndex: number) => void
@@ -428,6 +437,20 @@ export const useSceneStore = create<SceneState>()(
                     presets: [...state.presets, newPreset],
                     activePresetId: newPreset.id,
                 }))
+            },
+
+            createCharacterAssetPresets: (sourcePresetIds, characters, options) => {
+                flushScenePromptDrafts()
+                const stamp = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+                const plan = planCharacterAssetPresets<SceneCard, ScenePreset>(
+                    get().presets,
+                    sourcePresetIds,
+                    characters,
+                    { ...options, now: Date.now() },
+                    index => `scene-preset-${stamp}-${index}`,
+                )
+                if (plan.created.length > 0) set({ presets: plan.presets })
+                return { createdIds: plan.created.map(preset => preset.id), skipped: plan.skipped }
             },
 
             duplicatePreset: (presetId) => {

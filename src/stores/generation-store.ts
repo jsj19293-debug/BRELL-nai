@@ -1,4 +1,5 @@
 import { create } from 'zustand'
+import { notifyGenerationDone } from '@/lib/generation-notify'
 import { persist, createJSONStorage } from 'zustand/middleware'
 import { indexedDBStorage } from '@/lib/indexed-db'
 import { useAuthStore } from './auth-store'
@@ -743,6 +744,13 @@ export const useGenerationStore = create<GenerationState>()(
                         }
                     }
 
+                    // 생성 완료 알림 · 소리: 여러 장을 뽑았거나, 창을 보고 있지 않을 때만 (한 장씩 뽑을 때마다 울리지 않게).
+                    if (!get().isCancelled && !options?.onImage && (batchCount > 1 || document.hidden || !document.hasFocus())) {
+                        notifyGenerationDone(
+                            i18n.t('generate.complete', '생성 완료'),
+                            i18n.t('generate.mainComplete', '이미지 {{n}}장 생성이 끝났습니다.', { n: batchCount }),
+                        )
+                    }
                     // Show completion toast for batch
                     if (!get().isCancelled && batchCount > 1) {
                         toast({

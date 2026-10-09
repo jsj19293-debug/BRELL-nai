@@ -19,6 +19,7 @@ export type ShortcutAction =
     | 'open:presetDialog'
     | 'action:generate'
     | 'action:resetFragmentCounters'
+    | 'action:toggleBlur'
 
 // 단축키 바인딩 인터페이스
 export interface KeyBinding {
@@ -47,6 +48,8 @@ const DEFAULT_BINDINGS: Record<ShortcutAction, KeyBinding> = {
     'open:presetDialog': { key: '`', ctrl: true, label: 'Ctrl+`', description: 'shortcuts.actions.presetDialog' },
     'action:generate': { key: 'Enter', ctrl: true, label: 'Ctrl+Enter', description: 'shortcuts.actions.generate' },
     'action:resetFragmentCounters': { key: 'r', ctrl: true, shift: true, label: 'Ctrl+Shift+R', description: 'shortcuts.actions.resetFragmentCounters' },
+    // 기본은 비워 둔다: 설정 > 단축키에서 원하는 키를 지정한다.
+    'action:toggleBlur': { key: '', label: '', description: 'shortcuts.actions.toggleBlur' },
 }
 
 interface ShortcutState {
@@ -93,6 +96,8 @@ export function matchesBinding(e: KeyboardEvent, binding: KeyBinding): boolean {
     const ctrlMatch = binding.ctrl ? (e.ctrlKey || e.metaKey) : !(e.ctrlKey || e.metaKey)
     const shiftMatch = binding.shift ? e.shiftKey : !e.shiftKey
     const altMatch = binding.alt ? e.altKey : !e.altKey
+    // 지정하지 않은(빈) 단축키는 어떤 키와도 맞지 않는다.
+    if (!binding.key) return false
     const keyMatch = e.key === binding.key || e.key.toLowerCase() === binding.key.toLowerCase()
     
     return ctrlMatch && shiftMatch && altMatch && keyMatch
@@ -171,4 +176,5 @@ export const SHORTCUT_ACTIONS: { action: ShortcutAction; category: string }[] = 
     { action: 'open:presetDialog', category: 'dialog' },
     { action: 'action:generate', category: 'action' },
     { action: 'action:resetFragmentCounters', category: 'action' },
+    { action: 'action:toggleBlur', category: 'action' },
 ]
