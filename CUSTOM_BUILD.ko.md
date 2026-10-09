@@ -1,4 +1,4 @@
-# Nightmare 2 (0.5) 빌드 안내 (NAIS2-Forge v1.13.0 기반)
+# Nightmare 2 (4.0) 빌드 안내 (NAIS2-Forge v1.13.0 기반)
 
 NAIS2-Forge에 아래 기능을 더하고, 쓰지 않는 기능을 뺀 빌드입니다.
 `main`에 올리면 GitHub Actions가 설치 파일을 만들어 줍니다 (Actions 탭 → 최근 실행 → Artifacts → `Nightmare-2-installer`).
@@ -68,7 +68,7 @@ npm install
 npm run tauri:build:local
 ```
 
-끝나면 `src-tauri/target/release/bundle/nsis/` 안에 `Nightmare 2_0.5.0_x64-setup.exe`가 생깁니다.
+끝나면 `src-tauri/target/release/bundle/nsis/` 안에 `Nightmare 2_4.0.0_x64-setup.exe`가 생깁니다.
 
 - `tauri:build:local`은 업데이트 서명 없이 빌드합니다. 원본의 `tauri:build`는 제작자의 서명 키가 있어야 해서
   그대로는 마지막 단계에서 실패합니다.
