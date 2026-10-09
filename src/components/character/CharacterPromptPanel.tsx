@@ -1,3 +1,4 @@
+import { fileToSquareAvatar } from '@/lib/square-avatar'
 import { memo, useState, useEffect, useRef, useCallback, useMemo, MouseEvent as ReactMouseEvent } from 'react'
 import { createPortal } from 'react-dom'
 import { useLocation } from 'react-router-dom'
@@ -1822,6 +1823,18 @@ function CharacterCard({
         })
     )
     const [variantNames, setVariantNames] = useState<Record<string, string>>({})
+    const avatarInputRef = useRef<HTMLInputElement>(null)
+    const handleAvatarFile = async (event: React.ChangeEvent<HTMLInputElement>) => {
+        const file = event.target.files?.[0]
+        event.target.value = ''
+        if (!file) return
+        try {
+            onUpdate({ avatar: await fileToSquareAvatar(file) })
+        } catch (error) {
+            console.error('Failed to set the character picture:', error)
+            toast({ title: t('characterPanel.avatarFailed', '이미지를 불러오지 못했어요'), variant: 'destructive' })
+        }
+    }
 
     useEffect(() => {
         if (!renameDialogOpen) return
@@ -1870,14 +1883,31 @@ function CharacterCard({
                             {...dragHandleProps}
                         >
                             {/* 캐릭터 아이콘 */}
-                            <div className={cn(
-                                "h-[30px] w-[30px] shrink-0 rounded-lg border border-transparent flex items-center justify-center",
+                            <button
+                                type="button"
+                                data-character-avatar
+                                title={character.avatar
+                                    ? t('characterPanel.avatarChange', '클릭: 프사 바꾸기 · 우클릭: 프사 지우기')
+                                    : t('characterPanel.avatarAdd', '클릭해서 프사 넣기')}
+                                onClick={(event) => { event.stopPropagation(); avatarInputRef.current?.click() }}
+                                onPointerDown={(event) => event.stopPropagation()}
+                                onContextMenu={(event) => {
+                                    if (!character.avatar) return
+                                    event.preventDefault()
+                                    event.stopPropagation()
+                                    onUpdate({ avatar: undefined })
+                                }}
+                                className={cn(
+                                "h-[30px] w-[30px] shrink-0 overflow-hidden rounded-lg border border-transparent flex items-center justify-center cursor-pointer hover:border-primary/50",
                                 isGenderIconMode && gender === 'male' && "bg-blue-500/15 text-blue-400",
                                 isGenderIconMode && gender === 'female' && "bg-pink-500/15 text-pink-400",
                                 (!isGenderIconMode || gender === 'unknown') && "bg-primary/10 text-primary",
                             )}>
-                                {isGenderIconMode && gender === 'male' ? <span aria-hidden="true" className="text-lg font-semibold leading-none">♂</span> : isGenderIconMode && gender === 'female' ? <span aria-hidden="true" className="text-lg font-semibold leading-none">♀</span> : <User className="h-4 w-4" />}
-                            </div>
+                                {character.avatar
+                                    ? <img src={character.avatar} alt="" draggable={false} className="h-full w-full object-cover" />
+                                    : isGenderIconMode && gender === 'male' ? <span aria-hidden="true" className="text-lg font-semibold leading-none">♂</span> : isGenderIconMode && gender === 'female' ? <span aria-hidden="true" className="text-lg font-semibold leading-none">♀</span> : <User className="h-4 w-4" />}
+                            </button>
+                            <input ref={avatarInputRef} type="file" accept="image/*" className="hidden" onClick={(event) => event.stopPropagation()} onChange={(event) => void handleAvatarFile(event)} />
 
                             {/* 캐릭터 번호 뱃지 - 위치 활성화시 색상 표시 */}
                             <div

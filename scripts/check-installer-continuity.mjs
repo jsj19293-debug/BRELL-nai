@@ -9,10 +9,10 @@ assert.doesNotMatch(hook, /StrCpy \$INSTDIR \$R0/)
 
 const config = JSON.parse(readFileSync('src-tauri/tauri.conf.json', 'utf8'))
 assert.equal(config.productName, 'Nightmare 2')
-assert.equal(config.version, '0.5.0')
+assert.equal(config.version, '4.0.0')
 assert.deepEqual(config.plugins.updater.endpoints, [])
 assert.equal(JSON.parse(readFileSync('package.json', 'utf8')).version, config.version)
-assert.match(readFileSync('src-tauri/Cargo.toml', 'utf8'), /^version = "0\.5\.0"$/m)
+assert.match(readFileSync('src-tauri/Cargo.toml', 'utf8'), /^version = "4\.0\.0"$/m)
 
 const updater = readFileSync('src/lib/app-updater.ts', 'utf8')
 assert.doesNotMatch(updater, /github\.com|check\(/)

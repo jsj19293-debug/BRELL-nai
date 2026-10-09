@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import {
-    ArrowDown, ArrowUp, BookOpen, Check, Copy, Download, FileText, Globe2, Languages, Loader2, NotebookPen, Pencil, Plus, Search, StickyNote, Trash2, Upload,
+    ArrowDown, ArrowUp, BookOpen, Check, Copy, Download, FileText, Globe, Globe2, Languages, Loader2, NotebookPen, Pencil, Plus, Search, StickyNote, Trash2, Upload,
 } from 'lucide-react'
 import { open as openDialog, save } from '@tauri-apps/plugin-dialog'
+import { WebSplitPanel } from '@/components/notes/WebSplitPanel'
 import { readTextFile, writeTextFile } from '@tauri-apps/plugin-fs'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -576,6 +577,13 @@ export default function PromptNotes() {
     const [renameDraft, setRenameDraft] = useState('')
     const [deleteId, setDeleteId] = useState<string | null>(null)
     const [translateSource, setTranslateSource] = useState('')
+    const [webSplit, setWebSplit] = useState(() => {
+        try { return localStorage.getItem('nightmare2-web-split') === '1' } catch { return false }
+    })
+    const changeWebSplit = (value: boolean) => {
+        setWebSplit(value)
+        try { localStorage.setItem('nightmare2-web-split', value ? '1' : '0') } catch { /* 저장 못 해도 화면은 바뀐다 */ }
+    }
 
     const project = projects.find(candidate => candidate.id === activeProjectId) ?? projects[0] ?? null
 
@@ -741,12 +749,20 @@ export default function PromptNotes() {
                             {item.badge && <span className="text-[11px] tabular-nums opacity-70">{item.badge}</span>}
                         </button>
                     ))}
-                    {project && tab !== 'translate' && (
-                        <div className="ml-auto flex items-center gap-2">
-                            <span className="max-w-[16rem] truncate text-xs text-muted-foreground">{project.name}</span>
-                            <CopyButton text={formatProject(project)} label={t('notes.copyAll', '전체 복사')} done={t('notes.copiedAll', '세계관과 로어북을 복사했어요')} />
-                        </div>
-                    )}
+                    <div className="ml-auto flex items-center gap-2">
+                        {project && tab !== 'translate' && (
+                            <>
+                                <span className="max-w-[16rem] truncate text-xs text-muted-foreground">{project.name}</span>
+                                <CopyButton text={formatProject(project)} label={t('notes.copyAll', '전체 복사')} done={t('notes.copiedAll', '세계관과 로어북을 복사했어요')} />
+                            </>
+                        )}
+                        <Tip content={t('webSplit.toggleTip', '오른쪽에 웹 화면을 나란히 띄웁니다 (단부루 · 번역기 등)')}>
+                            <Button variant={webSplit ? 'default' : 'outline'} size="sm" className="h-8 text-xs" onClick={() => changeWebSplit(!webSplit)} data-web-split-toggle>
+                                <Globe className="mr-1 h-3.5 w-3.5" />
+                                {t('webSplit.toggle', '웹 분할')}
+                            </Button>
+                        </Tip>
+                    </div>
                 </div>
                 {tab === 'translate' ? (
                     <TranslateTab source={translateSource} onSourceChange={setTranslateSource} />
@@ -762,6 +778,8 @@ export default function PromptNotes() {
                     <MemoTab key={project.id} project={project} />
                 )}
             </section>
+
+            {webSplit && <WebSplitPanel onClose={() => changeWebSplit(false)} />}
 
             <ConfirmDialog
                 open={deleteId !== null}

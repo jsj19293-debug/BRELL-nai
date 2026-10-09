@@ -11,6 +11,8 @@ export interface CharacterPrompt {
     promptEnabled?: boolean
     negativeEnabled?: boolean
     costumeEnabled?: boolean
+    /** 캐릭터 프사: 정사각형으로 자른 작은 이미지 (data URL) */
+    avatar?: string
     position: { x: number, y: number }  // 0-1 coordinates (0,0 = top-left, 1,1 = bottom-right)
 }
 
@@ -111,6 +113,8 @@ export interface CharacterPrompt {
     promptEnabled?: boolean
     negativeEnabled?: boolean
     costumeEnabled?: boolean
+    /** 캐릭터 프사: 정사각형으로 자른 작은 이미지 (data URL) */
+    avatar?: string
     position: { x: number, y: number }  // 0-1 coordinates (0,0 = top-left, 1,1 = bottom-right)
 }
 

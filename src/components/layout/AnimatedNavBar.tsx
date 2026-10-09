@@ -49,14 +49,14 @@ export function AnimatedNavBar({ items }: AnimatedNavBarProps) {
                             "relative rounded-full text-sm font-medium transition-colors z-0",
                             isCompact ? "p-2" : "px-4 py-2",
                             isActive
-                                ? "text-foreground"
-                                : "text-muted-foreground hover:text-foreground/80"
+                                ? "text-foreground dark:text-amber-200"
+                                : "text-foreground/70 hover:text-foreground dark:text-slate-200/90 dark:hover:text-white"
                         )}
                     >
                         {isActive && (
                             <motion.div
                                 layoutId="activeTab"
-                                className="absolute inset-0 bg-foreground/10 backdrop-blur-md rounded-full border border-foreground/10 shadow-sm -z-10"
+                                className="absolute inset-0 bg-foreground/10 dark:bg-amber-200/10 backdrop-blur-md rounded-full border border-foreground/10 dark:border-amber-200/30 shadow-sm -z-10"
                                 transition={{ type: "spring", bounce: 0.2, duration: 0.6 }}
                             />
                         )}

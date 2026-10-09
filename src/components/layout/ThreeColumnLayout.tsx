@@ -292,7 +292,7 @@ export function ThreeColumnLayout({ children }: ThreeColumnLayoutProps) {
             <DropdownMenuTrigger asChild>
                 <button
                     type="button"
-                    className="flex h-8 shrink-0 items-center gap-2 rounded-lg border border-border/60 bg-muted/30 px-3 text-sm font-medium text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground"
+                    className="flex h-8 shrink-0 items-center gap-2 rounded-lg border border-border/60 bg-muted/30 px-3 text-sm font-medium text-foreground/70 dark:text-slate-200/90 transition-colors hover:bg-muted/60 hover:text-foreground"
                     aria-label={t('layout.account')}
                 >
                     {isLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <UserRound className="h-4 w-4" />}
