@@ -1,0 +1,361 @@
+import { create } from 'zustand'
+import { persist, createJSONStorage } from 'zustand/middleware'
+import { indexedDBStorage } from '@/lib/indexed-db'
+import type { SceneRandomCharacterMode } from '@/lib/random-character-selection'
+import type { CharacterGender } from '@/lib/character-gender'
+import type { SceneExportNamePart } from '@/lib/scene-export-name'
+import type { PromptWhitespaceMode } from '@/lib/prompt-formatting'
+import type { CharacterPositionMode } from '@/lib/character-position-grid'
+import type { SceneCharacterAdditionMode } from './scene-store'
+import { clampSceneI2iNoise, clampSceneI2iStrength, SCENE_I2I_DEFAULT_STRENGTH } from '@/lib/scene-i2i-cycle'
+
+export interface CustomResolution {
+    id: string
+    label: string
+    width: number
+    height: number
+}
+
+interface SettingsState {
+    // Save settings
+    savePath: string
+    useAbsolutePath: boolean  // If true, savePath is absolute path; if false, relative to Pictures folder
+    autoSave: boolean
+
+    // Custom resolution presets
+    customResolutions: CustomResolution[]
+
+    // UI settings
+    promptFontSize: number
+    basePromptCollapsed: boolean  // 기본 프롬프트 접기 상태
+    additionalPromptCollapsed: boolean  // 추가 프롬프트 접기 상태
+    detailPromptCollapsed: boolean  // 세부 프롬프트 접기 상태
+    negativePromptCollapsed: boolean  // 네거티브 프롬프트 접기 상태
+    characterPositionMode: CharacterPositionMode
+
+    // Generation settings
+    useStreaming: boolean  // Use streaming API for image generation
+    generationDelay: number  // Delay between batch generations in ms (0-5000)
+    generationDelayJitter: number // Upper random offset in ms; 0 disables jitter
+    acknowledgedAnnouncementId: string
+
+    // Gemini API settings
+    geminiApiKey: string
+
+    // AI 태그 찾기 (한글 → 단부루 태그): Claude · GPT 키와 사용할 제공사·모델
+    anthropicApiKey: string
+    openaiApiKey: string
+    aiTagProvider: 'gemini' | 'claude' | 'openai'
+    /** 제공사별 모델 ID. 비어 있으면 기본 모델을 쓴다. */
+    aiTagModels: { gemini: string; claude: string; openai: string }
+    /** 프롬프트 칸에 한글을 치면 AI에게도 태그를 물어본다 (끄면 내장 용어집만 쓴다) */
+    koTagAiSuggestEnabled: boolean
+    /** 영어 태그 자동완성 옆에 한글 뜻을 보여준다 */
+    koTagHintEnabled: boolean
+
+    // 씬 모드 "레퍼런스 → i2i" 자동 싸이클
+    sceneRefI2iCycleEnabled: boolean
+    /** 2단계 i2i 변화 강도 (0.01~0.99) */
+    sceneRefI2iStrength: number
+    sceneRefI2iNoise: number
+    /** 2단계에서 바이브 트랜스퍼도 끈다 (캐릭터 레퍼런스는 항상 끈다) */
+    sceneRefI2iDisableVibes: boolean
+
+    // Library settings
+    libraryPath: string
+    useAbsoluteLibraryPath: boolean
+
+    // Image format setting
+    imageFormat: 'png' | 'webp'
+    exportImageFormat: 'png' | 'webp' | 'jpeg'
+    exportWebpQuality: number
+
+    // Expert options
+    expertOptionsEnabled: boolean
+    promptWhitespaceMode: PromptWhitespaceMode
+    removeEmptyPromptSeparators: boolean
+    insertBlankLinesBetweenPromptParts: boolean
+    expertCharacterPromptFolderBrowserEnabled: boolean
+    expertLibraryFolderBrowserEnabled: boolean
+    expertCharacterPromptLayoutEnabled: boolean
+    expertCharacterPromptVariantsEnabled: boolean
+    expertCharacterPromptGenderIndicatorEnabled: boolean
+    expertMetadataAlwaysAddCharacters: boolean
+    characterPromptGenderIndicatorMode: 'icon' | 'header'
+    expertSceneCharacterVariantOverrideEnabled: boolean
+    expertSceneCharacterCostumeOverrideEnabled: boolean
+    expertSceneCharacterRepeatEnabled: boolean
+    expertSceneRoundRobinEnabled: boolean
+    expertSceneCharacterAdditionsEnabled: boolean
+    sceneCharacterAdditionMode: SceneCharacterAdditionMode
+    expertSceneMultiCharacterEnabled: boolean
+    sceneMultiCharacterGenderSelectionMode: 'dropdown' | 'portrait'
+    expertSceneExportNameEnabled: boolean
+    sceneExportNamePart: SceneExportNamePart
+    expertSceneRandomCharactersEnabled: boolean
+    sceneRandomCharactersActive: boolean
+    sceneRandomCharacterMode: SceneRandomCharacterMode
+    sceneRandomCharacterCount: number
+    sceneRandomCharacterIds: string[]
+    sceneRandomCharacterGroupIds: string[]
+    sceneRandomCharacterGender: 'all' | CharacterGender
+    expertExifDirectActionEnabled: boolean
+    expertExifManagerEnabled: boolean
+    expertExifQuickActionEnabled: boolean
+    expertExifAutoSaveEnabled: boolean
+    exifAutoSaveName: string
+    exifAutoSavePath: string
+    exifOutputFormat: 'jpeg' | 'png' | 'webp'
+    expertR2DirectUploadEnabled: boolean
+    expertR2ExifRemovalEnabled: boolean
+    expertCloudR2Enabled: boolean
+    r2ViewMode: 'folders' | 'list' | 'thumbnails'
+
+    // R2 settings
+    r2AccountId: string
+    r2AccessKeyId: string
+    r2SecretAccessKey: string
+    r2Bucket: string
+    r2PublicBaseUrl: string
+
+    // Actions
+    setSavePath: (path: string, useAbsolute?: boolean) => void
+    setAutoSave: (autoSave: boolean) => void
+    addCustomResolution: (resolution: Omit<CustomResolution, 'id'>) => void
+    removeCustomResolution: (id: string) => void
+    reorderCustomResolution: (fromId: string, toId: string) => void
+    setPromptFontSize: (size: number) => void
+    setBasePromptCollapsed: (collapsed: boolean) => void
+    setAdditionalPromptCollapsed: (collapsed: boolean) => void
+    setDetailPromptCollapsed: (collapsed: boolean) => void
+    setNegativePromptCollapsed: (collapsed: boolean) => void
+    setCharacterPositionMode: (mode: CharacterPositionMode) => void
+    setUseStreaming: (useStreaming: boolean) => void
+    setGenerationDelay: (delay: number) => void
+    setGenerationDelayJitter: (delay: number) => void
+    acknowledgeAnnouncement: (id: string) => void
+    setGeminiApiKey: (key: string) => void
+    setAiTagConfig: (config: Partial<Pick<SettingsState, 'anthropicApiKey' | 'openaiApiKey' | 'aiTagProvider' | 'koTagAiSuggestEnabled' | 'koTagHintEnabled'>>) => void
+    setAiTagModel: (provider: 'gemini' | 'claude' | 'openai', model: string) => void
+    setSceneRefI2iCycle: (config: Partial<Pick<SettingsState, 'sceneRefI2iCycleEnabled' | 'sceneRefI2iStrength' | 'sceneRefI2iNoise' | 'sceneRefI2iDisableVibes'>>) => void
+    setLibraryPath: (path: string, useAbsolute?: boolean) => void
+    setImageFormat: (format: 'png' | 'webp') => void
+    setExportImageFormat: (format: 'png' | 'webp' | 'jpeg') => void
+    setExportWebpQuality: (quality: number) => void
+    setExpertOptionsEnabled: (enabled: boolean) => void
+    setPromptWhitespaceMode: (mode: PromptWhitespaceMode) => void
+    setRemoveEmptyPromptSeparators: (enabled: boolean) => void
+    setInsertBlankLinesBetweenPromptParts: (enabled: boolean) => void
+    setExpertCharacterPromptFolderBrowserEnabled: (enabled: boolean) => void
+    setExpertLibraryFolderBrowserEnabled: (enabled: boolean) => void
+    setExpertCharacterPromptLayoutEnabled: (enabled: boolean) => void
+    setExpertCharacterPromptVariantsEnabled: (enabled: boolean) => void
+    setExpertCharacterPromptGenderIndicatorEnabled: (enabled: boolean) => void
+    setExpertMetadataAlwaysAddCharacters: (enabled: boolean) => void
+    setCharacterPromptGenderIndicatorMode: (mode: 'icon' | 'header') => void
+    setExpertSceneCharacterVariantOverrideEnabled: (enabled: boolean) => void
+    setExpertSceneCharacterCostumeOverrideEnabled: (enabled: boolean) => void
+    setExpertSceneCharacterRepeatEnabled: (enabled: boolean) => void
+    setExpertSceneRoundRobinEnabled: (enabled: boolean) => void
+    setExpertSceneCharacterAdditionsEnabled: (enabled: boolean) => void
+    setSceneCharacterAdditionMode: (mode: SceneCharacterAdditionMode) => void
+    setExpertSceneMultiCharacterEnabled: (enabled: boolean) => void
+    setSceneMultiCharacterGenderSelectionMode: (mode: 'dropdown' | 'portrait') => void
+    setExpertSceneExportNameEnabled: (enabled: boolean) => void
+    setSceneExportNamePart: (part: SceneExportNamePart) => void
+    setExpertSceneRandomCharactersEnabled: (enabled: boolean) => void
+    setSceneRandomCharacterConfig: (config: Partial<Pick<SettingsState, 'sceneRandomCharactersActive' | 'sceneRandomCharacterMode' | 'sceneRandomCharacterCount' | 'sceneRandomCharacterIds' | 'sceneRandomCharacterGroupIds' | 'sceneRandomCharacterGender'>>) => void
+    setExpertExifDirectActionEnabled: (enabled: boolean) => void
+    setExpertExifManagerEnabled: (enabled: boolean) => void
+    setExpertExifQuickActionEnabled: (enabled: boolean) => void
+    setExpertExifAutoSaveEnabled: (enabled: boolean) => void
+    setExifAutoSaveName: (name: string) => void
+    setExifAutoSavePath: (path: string) => void
+    setExifOutputFormat: (format: 'jpeg' | 'png' | 'webp') => void
+    setExpertR2DirectUploadEnabled: (enabled: boolean) => void
+    setExpertR2ExifRemovalEnabled: (enabled: boolean) => void
+    setExpertCloudR2Enabled: (enabled: boolean) => void
+    setR2ViewMode: (mode: 'folders' | 'list' | 'thumbnails') => void
+    setR2Config: (config: Partial<Pick<SettingsState, 'r2AccountId' | 'r2AccessKeyId' | 'r2SecretAccessKey' | 'r2Bucket' | 'r2PublicBaseUrl'>>) => void
+}
+
+export const useSettingsStore = create<SettingsState>()(
+    persist(
+        (set) => ({
+            savePath: 'NAIS_Output',
+            useAbsolutePath: false,  // Default: relative to Pictures folder
+            autoSave: true,
+            customResolutions: [],
+            promptFontSize: 16, // Default text-base equivalent approximately
+            basePromptCollapsed: false, // Default: expanded
+            additionalPromptCollapsed: false, // Default: expanded
+            detailPromptCollapsed: false, // Default: expanded
+            negativePromptCollapsed: false, // Default: expanded
+            characterPositionMode: 'grid',
+            useStreaming: true, // Default: enabled
+            generationDelay: 500, // Default: 500ms delay between batch generations
+            generationDelayJitter: 0,
+            acknowledgedAnnouncementId: '',
+            geminiApiKey: '', // Default: empty
+            anthropicApiKey: '',
+            openaiApiKey: '',
+            aiTagProvider: 'gemini',
+            aiTagModels: { gemini: '', claude: '', openai: '' },
+            koTagAiSuggestEnabled: true,
+            koTagHintEnabled: true,
+            sceneRefI2iCycleEnabled: false,
+            sceneRefI2iStrength: SCENE_I2I_DEFAULT_STRENGTH,
+            sceneRefI2iNoise: 0,
+            sceneRefI2iDisableVibes: false,
+            libraryPath: 'NAIS_Library', // Default: relative to Pictures folder
+            useAbsoluteLibraryPath: false, // Default: relative to Pictures folder
+            imageFormat: 'png', // Default: PNG format
+            exportImageFormat: 'png',
+            exportWebpQuality: 90,
+            expertOptionsEnabled: false,
+            promptWhitespaceMode: 'preserve',
+            removeEmptyPromptSeparators: false,
+            insertBlankLinesBetweenPromptParts: false,
+            expertCharacterPromptFolderBrowserEnabled: true,
+            expertLibraryFolderBrowserEnabled: false,
+            expertCharacterPromptLayoutEnabled: false,
+            expertCharacterPromptVariantsEnabled: false,
+            expertCharacterPromptGenderIndicatorEnabled: false,
+            expertMetadataAlwaysAddCharacters: false,
+            characterPromptGenderIndicatorMode: 'icon',
+            expertSceneCharacterVariantOverrideEnabled: false,
+            expertSceneCharacterCostumeOverrideEnabled: false,
+            expertSceneCharacterRepeatEnabled: false,
+            expertSceneRoundRobinEnabled: false,
+            expertSceneCharacterAdditionsEnabled: false,
+            sceneCharacterAdditionMode: 'preset',
+            expertSceneMultiCharacterEnabled: false,
+            sceneMultiCharacterGenderSelectionMode: 'dropdown',
+            expertSceneExportNameEnabled: false,
+            sceneExportNamePart: 'prefix',
+            expertSceneRandomCharactersEnabled: false,
+            sceneRandomCharactersActive: false,
+            sceneRandomCharacterMode: 'all',
+            sceneRandomCharacterCount: 1,
+            sceneRandomCharacterIds: [],
+            sceneRandomCharacterGroupIds: [],
+            sceneRandomCharacterGender: 'all',
+            expertExifDirectActionEnabled: false,
+            expertExifManagerEnabled: false,
+            expertExifQuickActionEnabled: false,
+            expertExifAutoSaveEnabled: false,
+            exifAutoSaveName: 'exif_cleaned',
+            exifAutoSavePath: 'NAIS_EXIF',
+            exifOutputFormat: 'jpeg',
+            expertR2DirectUploadEnabled: false,
+            expertR2ExifRemovalEnabled: false,
+            expertCloudR2Enabled: false,
+            r2ViewMode: 'list',
+            r2AccountId: '',
+            r2AccessKeyId: '',
+            r2SecretAccessKey: '',
+            r2Bucket: '',
+            r2PublicBaseUrl: '',
+
+            setSavePath: (savePath, useAbsolute) => set({
+                savePath,
+                useAbsolutePath: useAbsolute ?? false
+            }),
+            setAutoSave: (autoSave) => set({ autoSave }),
+
+            addCustomResolution: (resolution) => set((state) => ({
+                customResolutions: [
+                    ...state.customResolutions,
+                    { ...resolution, id: Date.now().toString() }
+                ]
+            })),
+
+            removeCustomResolution: (id) => set((state) => ({
+                customResolutions: state.customResolutions.filter(r => r.id !== id)
+            })),
+            reorderCustomResolution: (fromId, toId) => set(state => {
+                const from = state.customResolutions.findIndex(item => item.id === fromId)
+                const to = state.customResolutions.findIndex(item => item.id === toId)
+                if (from < 0 || to < 0 || from === to) return state
+                const customResolutions = [...state.customResolutions]
+                customResolutions.splice(to, 0, customResolutions.splice(from, 1)[0])
+                return { customResolutions }
+            }),
+            setPromptFontSize: (size) => set({ promptFontSize: size }),
+            setBasePromptCollapsed: (collapsed) => set({ basePromptCollapsed: collapsed }),
+            setAdditionalPromptCollapsed: (collapsed) => set({ additionalPromptCollapsed: collapsed }),
+            setDetailPromptCollapsed: (collapsed) => set({ detailPromptCollapsed: collapsed }),
+            setNegativePromptCollapsed: (collapsed) => set({ negativePromptCollapsed: collapsed }),
+            setCharacterPositionMode: (characterPositionMode) => set({ characterPositionMode }),
+            setUseStreaming: (useStreaming) => set({ useStreaming }),
+            setGenerationDelay: (delay) => set({ generationDelay: Math.max(0, Math.min(5000, delay)) }),
+            setGenerationDelayJitter: (delay) => set({ generationDelayJitter: Number.isFinite(delay) ? Math.max(0, Math.min(5000, delay)) : 0 }),
+            acknowledgeAnnouncement: (acknowledgedAnnouncementId) => set({ acknowledgedAnnouncementId }),
+            setGeminiApiKey: (key) => set({ geminiApiKey: key }),
+            setAiTagConfig: (config) => set(config),
+            setSceneRefI2iCycle: (config) => set({
+                ...config,
+                ...(config.sceneRefI2iStrength === undefined ? {} : { sceneRefI2iStrength: clampSceneI2iStrength(config.sceneRefI2iStrength) }),
+                ...(config.sceneRefI2iNoise === undefined ? {} : { sceneRefI2iNoise: clampSceneI2iNoise(config.sceneRefI2iNoise) }),
+            }),
+            setAiTagModel: (provider, model) => set(state => ({
+                aiTagModels: { ...state.aiTagModels, [provider]: model.trim() },
+            })),
+            setLibraryPath: (libraryPath, useAbsolute) => set({
+                libraryPath,
+                useAbsoluteLibraryPath: useAbsolute ?? false
+            }),
+            setImageFormat: (format) => set({ imageFormat: format }),
+            setExportImageFormat: (exportImageFormat) => set({ exportImageFormat }),
+            setExportWebpQuality: (quality) => set({ exportWebpQuality: Math.max(10, Math.min(100, Math.round(quality))) }),
+            setExpertOptionsEnabled: (expertOptionsEnabled) => set({ expertOptionsEnabled }),
+            setPromptWhitespaceMode: (promptWhitespaceMode) => set({ promptWhitespaceMode }),
+            setRemoveEmptyPromptSeparators: (removeEmptyPromptSeparators) => set({ removeEmptyPromptSeparators }),
+            setInsertBlankLinesBetweenPromptParts: (insertBlankLinesBetweenPromptParts) => set({ insertBlankLinesBetweenPromptParts }),
+            setExpertCharacterPromptFolderBrowserEnabled: (expertCharacterPromptFolderBrowserEnabled) => set({ expertCharacterPromptFolderBrowserEnabled }),
+            setExpertLibraryFolderBrowserEnabled: (expertLibraryFolderBrowserEnabled) => set({ expertLibraryFolderBrowserEnabled }),
+            setExpertCharacterPromptLayoutEnabled: (expertCharacterPromptLayoutEnabled) => set({ expertCharacterPromptLayoutEnabled }),
+            setExpertCharacterPromptVariantsEnabled: (expertCharacterPromptVariantsEnabled) => set({ expertCharacterPromptVariantsEnabled }),
+            setExpertCharacterPromptGenderIndicatorEnabled: (expertCharacterPromptGenderIndicatorEnabled) => set({ expertCharacterPromptGenderIndicatorEnabled }),
+            setExpertMetadataAlwaysAddCharacters: (expertMetadataAlwaysAddCharacters) => set({ expertMetadataAlwaysAddCharacters }),
+            setCharacterPromptGenderIndicatorMode: (characterPromptGenderIndicatorMode) => set({ characterPromptGenderIndicatorMode }),
+            setExpertSceneCharacterVariantOverrideEnabled: (expertSceneCharacterVariantOverrideEnabled) => set({ expertSceneCharacterVariantOverrideEnabled }),
+            setExpertSceneCharacterCostumeOverrideEnabled: (expertSceneCharacterCostumeOverrideEnabled) => set({ expertSceneCharacterCostumeOverrideEnabled }),
+            setExpertSceneCharacterRepeatEnabled: (expertSceneCharacterRepeatEnabled) => set({ expertSceneCharacterRepeatEnabled }),
+            setExpertSceneRoundRobinEnabled: (expertSceneRoundRobinEnabled) => set({ expertSceneRoundRobinEnabled }),
+            setExpertSceneCharacterAdditionsEnabled: (expertSceneCharacterAdditionsEnabled) => set({ expertSceneCharacterAdditionsEnabled }),
+            setSceneCharacterAdditionMode: (sceneCharacterAdditionMode) => set({ sceneCharacterAdditionMode }),
+            setExpertSceneMultiCharacterEnabled: (expertSceneMultiCharacterEnabled) => set({ expertSceneMultiCharacterEnabled }),
+            setSceneMultiCharacterGenderSelectionMode: (sceneMultiCharacterGenderSelectionMode) => set({ sceneMultiCharacterGenderSelectionMode }),
+            setExpertSceneExportNameEnabled: (expertSceneExportNameEnabled) => set({ expertSceneExportNameEnabled }),
+            setSceneExportNamePart: (sceneExportNamePart) => set({ sceneExportNamePart }),
+            setExpertSceneRandomCharactersEnabled: (expertSceneRandomCharactersEnabled) => set({ expertSceneRandomCharactersEnabled }),
+            setSceneRandomCharacterConfig: (config) => set(config),
+            setExpertExifDirectActionEnabled: (expertExifDirectActionEnabled) => set({ expertExifDirectActionEnabled }),
+            setExpertExifManagerEnabled: (expertExifManagerEnabled) => set({ expertExifManagerEnabled }),
+            setExpertExifQuickActionEnabled: (expertExifQuickActionEnabled) => set({ expertExifQuickActionEnabled }),
+            setExpertExifAutoSaveEnabled: (expertExifAutoSaveEnabled) => set({ expertExifAutoSaveEnabled }),
+            setExifAutoSaveName: (exifAutoSaveName) => set({ exifAutoSaveName }),
+            setExifAutoSavePath: (exifAutoSavePath) => set({ exifAutoSavePath }),
+            setExifOutputFormat: (exifOutputFormat) => set({ exifOutputFormat }),
+            setExpertR2DirectUploadEnabled: (expertR2DirectUploadEnabled) => set({ expertR2DirectUploadEnabled }),
+            setExpertR2ExifRemovalEnabled: (expertR2ExifRemovalEnabled) => set({ expertR2ExifRemovalEnabled }),
+            setExpertCloudR2Enabled: (expertCloudR2Enabled) => set({ expertCloudR2Enabled }),
+            setR2ViewMode: (r2ViewMode) => set({ r2ViewMode }),
+            setR2Config: (config) => set(config),
+        }),
+        {
+            name: 'nais2-forge-settings',
+            storage: createJSONStorage(() => indexedDBStorage),
+            onRehydrateStorage: () => (state, error) => {
+                if (error) {
+                    console.error('[SettingsStore] Hydration failed:', error)
+                    return
+                }
+                if (state) {
+                    console.log('[SettingsStore] Hydrated successfully')
+                }
+            },
+        }
+    )
+)

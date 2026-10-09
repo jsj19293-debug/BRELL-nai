@@ -1,0 +1,89 @@
+import { lazy, Suspense, useEffect } from 'react'
+import { BrowserRouter, Routes, Route } from 'react-router-dom'
+import { ThreeColumnLayout } from '@/components/layout/ThreeColumnLayout'
+import { Toaster } from '@/components/ui/toaster'
+import { TooltipProvider } from '@/components/ui/tooltip'
+import { useSceneGeneration } from '@/hooks/useSceneGeneration'
+import { useUpdateChecker } from '@/hooks/useUpdateChecker'
+import { useShortcuts } from '@/hooks/useShortcuts'
+import MainMode from '@/pages/MainMode'
+import { DrawOverHost } from '@/components/tools/DrawOverHost'
+import { AnnouncementDialog } from '@/components/AnnouncementDialog'
+import { startInboxInBackground } from '@/inbox'
+
+const SceneMode = lazy(() => import('@/pages/SceneMode'))
+const SceneDetail = lazy(() => import('@/pages/SceneDetail'))
+const WebView = lazy(() => import('@/pages/WebView'))
+const Library = lazy(() => import('@/pages/Library'))
+const CloudR2 = lazy(() => import('@/pages/CloudR2'))
+const Settings = lazy(() => import('@/pages/Settings'))
+const ToolsMode = lazy(() => import('@/pages/ToolsMode'))
+const ExifManager = lazy(() => import('@/pages/ExifManager'))
+const Inbox = lazy(() => import('@/pages/Inbox'))
+
+function AppContent() {
+    // Scene generation hook at App level - persists across page navigation
+    useSceneGeneration()
+    useUpdateChecker()
+    useShortcuts()
+
+
+    // 알림 모아보기: 화면을 열지 않아도 연결된 플랫폼의 댓글을 주기적으로 모은다.
+    useEffect(() => {
+        startInboxInBackground()
+    }, [])
+
+    // Disable right-click globally except for allowed elements
+    useEffect(() => {
+        const handleContextMenu = (e: MouseEvent) => {
+            // Check if the target or any parent has data-allow-context-menu attribute
+            let element = e.target as HTMLElement | null
+            while (element) {
+                if (element.hasAttribute('data-allow-context-menu')) {
+                    return // Allow context menu
+                }
+                element = element.parentElement
+            }
+            e.preventDefault() // Block context menu
+        }
+
+        document.addEventListener('contextmenu', handleContextMenu)
+        return () => document.removeEventListener('contextmenu', handleContextMenu)
+    }, [])
+
+    return (
+        <>
+            <ThreeColumnLayout>
+                <Suspense fallback={<div className="flex h-full items-center justify-center text-sm text-muted-foreground">Loading...</div>}>
+                    <Routes>
+                        <Route path="/" element={<MainMode />} />
+                        <Route path="/scenes" element={<SceneMode />} />
+                        <Route path="/scenes/:id" element={<SceneDetail />} />
+                        <Route path="/tools" element={<ToolsMode />} />
+                        <Route path="/exif" element={<ExifManager />} />
+                        <Route path="/web" element={<WebView />} />
+                        <Route path="/library" element={<Library />} />
+                        <Route path="/inbox" element={<Inbox />} />
+                        <Route path="/cloud-r2" element={<CloudR2 />} />
+                        <Route path="/settings" element={<Settings />} />
+                    </Routes>
+                </Suspense>
+            </ThreeColumnLayout>
+            <DrawOverHost />
+            <AnnouncementDialog />
+        </>
+    )
+}
+
+function App() {
+    return (
+        <TooltipProvider delayDuration={300}>
+            <BrowserRouter>
+                <AppContent />
+                <Toaster />
+            </BrowserRouter>
+        </TooltipProvider>
+    )
+}
+
+export default App

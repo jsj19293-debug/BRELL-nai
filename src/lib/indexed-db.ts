@@ -1,0 +1,1154 @@
+import type { PersistStorage, StateStorage, StorageValue } from 'zustand/middleware'
+import { readNativeState, removeNativeState, writeNativeState } from '@/lib/native-state'
+import { normalizeCostumePromptMarkersForExport } from '@/lib/costume-prompt'
+// Since I cannot install packages, I will implement a minimal wrapper similar to idb-keyval logic
+// or I can implement a raw IndexedDB wrapper.
+// Given constraints, raw IndexedDB is safer as strict dependency rules apply.
+
+const DB_NAME = 'nais2-forge-db'
+const STORE_NAME = 'keyval'
+const DB_TIMEOUT_MS = 10000 // 10초 타임아웃
+
+// IndexedDB 초기화 실패 추적
+let dbInitFailed = false
+let dbInitError: Error | null = null
+
+// 지연 초기화 - 모듈 로드 시점이 아닌 첫 사용 시점에 초기화
+let dbPromise: Promise<IDBDatabase> | null = null
+
+function getDb(): Promise<IDBDatabase> {
+    if (dbPromise) return dbPromise
+    
+    // 이전에 초기화 실패했으면 즉시 reject
+    if (dbInitFailed) {
+        return Promise.reject(dbInitError || new Error('IndexedDB initialization previously failed'))
+    }
+    
+    dbPromise = new Promise<IDBDatabase>((resolve, reject) => {
+        // IndexedDB 지원 체크
+        if (typeof indexedDB === 'undefined') {
+            dbInitFailed = true
+            dbInitError = new Error('IndexedDB is not supported in this environment')
+            reject(dbInitError)
+            return
+        }
+        
+        // 타임아웃 설정 - DB 열기가 무한 대기되는 것 방지
+        const timeoutId = setTimeout(() => {
+            dbInitFailed = true
+            dbInitError = new Error(`IndexedDB open timed out after ${DB_TIMEOUT_MS}ms`)
+            console.error('[IndexedDB]', dbInitError.message)
+            reject(dbInitError)
+        }, DB_TIMEOUT_MS)
+        
+        try {
+            const request = indexedDB.open(DB_NAME, 1)
+            
+            request.onupgradeneeded = (event) => {
+                try {
+                    const db = (event.target as IDBOpenDBRequest).result
+                    if (!db.objectStoreNames.contains(STORE_NAME)) {
+                        db.createObjectStore(STORE_NAME)
+                    }
+                } catch (err) {
+                    console.error('[IndexedDB] onupgradeneeded error:', err)
+                }
+            }
+            
+            request.onsuccess = () => {
+                clearTimeout(timeoutId)
+                const db = request.result
+                
+                // DB 연결 끊김 감지
+                db.onclose = () => {
+                    console.warn('[IndexedDB] Database connection closed unexpectedly')
+                    dbPromise = null // 다음 요청 시 재연결 시도
+                }
+                
+                db.onerror = (event) => {
+                    console.error('[IndexedDB] Database error:', event)
+                }
+                
+                console.log('[IndexedDB] Database opened successfully')
+                resolve(db)
+            }
+            
+            request.onerror = () => {
+                clearTimeout(timeoutId)
+                dbInitFailed = true
+                dbInitError = request.error || new Error('Failed to open IndexedDB')
+                console.error('[IndexedDB] Open error:', dbInitError)
+                reject(dbInitError)
+            }
+            
+            request.onblocked = () => {
+                console.warn('[IndexedDB] Database blocked - another connection is open')
+            }
+        } catch (err) {
+            clearTimeout(timeoutId)
+            dbInitFailed = true
+            dbInitError = err instanceof Error ? err : new Error(String(err))
+            console.error('[IndexedDB] Unexpected error during open:', dbInitError)
+            reject(dbInitError)
+        }
+    })
+    
+    return dbPromise
+}
+
+// DB 초기화 상태 확인용 (마이그레이션 전 체크용)
+export async function ensureDbReady(): Promise<boolean> {
+    try {
+        await getDb()
+        return true
+    } catch (err) {
+        console.error('[IndexedDB] ensureDbReady failed:', err)
+        return false
+    }
+}
+
+// DB 초기화 실패 여부 확인
+export function isDbInitFailed(): boolean {
+    return dbInitFailed
+}
+
+const OPERATION_TIMEOUT_MS = 5000 // 개별 작업 타임아웃
+
+// ============================================
+// Debounced Write System
+// String writes are debounced for every store. Large stores can additionally use
+// createDeferredJSONStorage so JSON serialization itself is also deferred.
+// ============================================
+const WRITE_DEBOUNCE_MS: Record<string, number> = {
+    'nais2-forge-scenes': 3000,           // Largest store (scene images), debounce aggressively
+    'nais2-forge-generation': 1000,       // Prompt typing triggers frequent updates
+    'nais2-forge-character-store': 1500,
+    'nais2-forge-character-prompts': 1500,
+    'nais2-forge-presets': 1500,
+    'nais2-forge-wildcards': 2000,
+}
+const DEFAULT_WRITE_DEBOUNCE = 500
+const MAX_WRITE_INTERVAL = 10000   // Force write at least every 10 seconds even during rapid changes
+
+const pendingWriteTimers = new Map<string, ReturnType<typeof setTimeout>>()
+const pendingWriteValues = new Map<string, string>()
+const lastWriteTime = new Map<string, number>()
+
+interface DeferredJSONWrite {
+    value: StorageValue<unknown>
+    timer: ReturnType<typeof setTimeout> | null
+    queuedAt: number
+}
+
+const deferredJSONWrites = new Map<string, DeferredJSONWrite>()
+const nativeDeferredJSONWrites = new Map<string, DeferredJSONWrite>()
+const NATIVE_STATE_KEYS = new Set(['nais2-forge-library'])
+
+function cancelNativeDeferredJSONWrite(name: string): void {
+    const pending = nativeDeferredJSONWrites.get(name)
+    if (pending?.timer) clearTimeout(pending.timer)
+    nativeDeferredJSONWrites.delete(name)
+}
+
+export async function readStoredStateItem(name: string): Promise<string | null> {
+    const pending = nativeDeferredJSONWrites.get(name)
+    if (pending) return JSON.stringify(pending.value)
+
+    if (NATIVE_STATE_KEYS.has(name)) {
+        const native = await readNativeState(name)
+        if (native.value !== null) return native.value
+
+        const legacy = await indexedDBStorage.getItem(name)
+        if (legacy && native.available && await writeNativeState(name, legacy)) {
+            const verified = await readNativeState(name)
+            if (verified.value === legacy) {
+                await indexedDBStorage.removeItem(name)
+                console.log(`[NativeState] Migrated ${name} from IndexedDB to SQLite`)
+            }
+        }
+        return legacy
+    }
+
+    return indexedDBStorage.getItem(name)
+}
+
+async function flushNativeDeferredJSONWrite(name: string): Promise<void> {
+    const pending = nativeDeferredJSONWrites.get(name)
+    if (!pending) return
+
+    if (pending.timer) clearTimeout(pending.timer)
+    nativeDeferredJSONWrites.delete(name)
+    const serialized = JSON.stringify(pending.value)
+    if (await writeNativeState(name, serialized)) {
+        await indexedDBStorage.removeItem(name)
+        return
+    }
+    await indexedDBStorage.setItem(name, serialized)
+}
+
+async function flushAllNativeDeferredJSONWrites(): Promise<void> {
+    for (const key of [...nativeDeferredJSONWrites.keys()]) {
+        await flushNativeDeferredJSONWrite(key)
+    }
+}
+
+export function createNativeDeferredJSONStorage<S>(debounceMs = 1000, maxWaitMs = 5000): PersistStorage<S, Promise<void>> {
+    return {
+        getItem: async name => {
+            const raw = await readStoredStateItem(name)
+            return raw ? JSON.parse(raw) as StorageValue<S> : null
+        },
+        setItem: async (name, value) => {
+            const now = Date.now()
+            const previous = nativeDeferredJSONWrites.get(name)
+            if (previous?.timer) clearTimeout(previous.timer)
+
+            const queuedAt = previous?.queuedAt ?? now
+            nativeDeferredJSONWrites.set(name, {
+                value: value as StorageValue<unknown>,
+                timer: null,
+                queuedAt,
+            })
+            if (now - queuedAt >= maxWaitMs) {
+                await flushNativeDeferredJSONWrite(name)
+                return
+            }
+
+            const waitMs = Math.min(debounceMs, maxWaitMs - (now - queuedAt))
+            const timer = setTimeout(() => {
+                flushNativeDeferredJSONWrite(name).catch(error => {
+                    console.error(`[NativeState] Deferred write failed for ${name}:`, error)
+                })
+            }, waitMs)
+            nativeDeferredJSONWrites.set(name, {
+                value: value as StorageValue<unknown>,
+                timer,
+                queuedAt,
+            })
+        },
+        removeItem: async name => {
+            cancelNativeDeferredJSONWrite(name)
+            await removeNativeState(name)
+            await indexedDBStorage.removeItem(name)
+        },
+    }
+}
+
+function cancelDeferredJSONWrite(name: string): void {
+    const pending = deferredJSONWrites.get(name)
+    if (pending?.timer) clearTimeout(pending.timer)
+    deferredJSONWrites.delete(name)
+}
+
+async function flushDeferredJSONWrite(name: string): Promise<void> {
+    const pending = deferredJSONWrites.get(name)
+    if (!pending) return
+
+    if (pending.timer) clearTimeout(pending.timer)
+    deferredJSONWrites.delete(name)
+    await indexedDBStorage.setItem(name, JSON.stringify(pending.value))
+}
+
+async function flushAllDeferredJSONWrites(): Promise<void> {
+    const keys = [...deferredJSONWrites.keys()]
+    for (const key of keys) await flushDeferredJSONWrite(key)
+}
+
+export function createDeferredJSONStorage<S>(debounceMs = 3000, maxWaitMs = 10000): PersistStorage<S, Promise<void>> {
+    return {
+        getItem: async (name) => {
+            const pending = deferredJSONWrites.get(name)
+            if (pending) return pending.value as StorageValue<S>
+
+            const raw = await indexedDBStorage.getItem(name)
+            return raw ? JSON.parse(raw) as StorageValue<S> : null
+        },
+        setItem: async (name, value) => {
+            const now = Date.now()
+            const previous = deferredJSONWrites.get(name)
+
+            // Zustand calls storage for every state update, including runtime-only
+            // changes. Keep the existing timer when the persisted snapshot itself
+            // has not changed.
+            if (previous
+                && previous.value.state === value.state
+                && previous.value.version === value.version) {
+                return
+            }
+
+            if (previous?.timer) clearTimeout(previous.timer)
+
+            const queuedAt = previous?.queuedAt ?? now
+            if (now - queuedAt >= maxWaitMs) {
+                deferredJSONWrites.set(name, {
+                    value: value as StorageValue<unknown>,
+                    timer: null,
+                    queuedAt,
+                })
+                await flushDeferredJSONWrite(name)
+                return
+            }
+
+            const waitMs = Math.min(debounceMs, maxWaitMs - (now - queuedAt))
+            const timer = setTimeout(() => {
+                flushDeferredJSONWrite(name).catch(error => {
+                    console.error(`[IndexedDB] Deferred JSON write failed for ${name}:`, error)
+                })
+            }, waitMs)
+
+            deferredJSONWrites.set(name, {
+                value: value as StorageValue<unknown>,
+                timer,
+                queuedAt,
+            })
+        },
+        removeItem: async (name) => {
+            cancelDeferredJSONWrite(name)
+            await indexedDBStorage.removeItem(name)
+        },
+    }
+}
+
+/** Write directly to IndexedDB (no debounce) */
+async function rawSetItem(name: string, value: string): Promise<void> {
+    if (dbInitFailed) return
+    try {
+        const db = await getDb()
+        return new Promise((resolve, reject) => {
+            const timeoutId = setTimeout(() => {
+                console.error(`[IndexedDB] setItem(${name}): Operation timed out`)
+                reject(new Error(`setItem timed out for key: ${name}`))
+            }, OPERATION_TIMEOUT_MS)
+
+            try {
+                const transaction = db.transaction(STORE_NAME, 'readwrite')
+
+                transaction.onerror = () => {
+                    clearTimeout(timeoutId)
+                    console.error(`[IndexedDB] setItem(${name}): Transaction error`, transaction.error)
+                    reject(transaction.error)
+                }
+
+                transaction.onabort = () => {
+                    clearTimeout(timeoutId)
+                    console.error(`[IndexedDB] setItem(${name}): Transaction aborted`)
+                    reject(new Error('Transaction aborted'))
+                }
+
+                transaction.oncomplete = () => {
+                    clearTimeout(timeoutId)
+                    resolve()
+                }
+
+                const store = transaction.objectStore(STORE_NAME)
+                const request = store.put(value, name)
+
+                request.onerror = () => {
+                    clearTimeout(timeoutId)
+                    console.error(`[IndexedDB] setItem(${name}): Request error`, request.error)
+                    reject(request.error)
+                }
+            } catch (err) {
+                clearTimeout(timeoutId)
+                throw err
+            }
+        })
+    } catch (err) {
+        console.error(`[IndexedDB] setItem(${name}): Failed`, err)
+    }
+}
+
+/** Flush a single pending write immediately */
+async function flushKey(name: string): Promise<void> {
+    const timer = pendingWriteTimers.get(name)
+    if (timer) {
+        clearTimeout(timer)
+        pendingWriteTimers.delete(name)
+    }
+    const value = pendingWriteValues.get(name)
+    if (value !== undefined) {
+        pendingWriteValues.delete(name)
+        lastWriteTime.set(name, Date.now())
+        await rawSetItem(name, value)
+    }
+}
+
+/** Flush ALL pending writes (called on app close) */
+export async function flushAllPendingWrites(): Promise<void> {
+    await flushAllNativeDeferredJSONWrites()
+    await flushAllDeferredJSONWrites()
+    const keys = [...new Set([...pendingWriteTimers.keys(), ...pendingWriteValues.keys()])]
+    for (const key of keys) {
+        await flushKey(key)
+    }
+}
+
+/** Write and verify data immediately before relaunching the app. */
+export async function setStorageItemImmediately(name: string, value: string): Promise<void> {
+    if (NATIVE_STATE_KEYS.has(name)) {
+        cancelNativeDeferredJSONWrite(name)
+        if (await writeNativeState(name, value)) {
+            const stored = await readNativeState(name)
+            if (stored.value !== value) throw new Error(`Failed to verify restored SQLite store: ${name}`)
+            await indexedDBStorage.removeItem(name)
+            return
+        }
+    }
+
+    cancelDeferredJSONWrite(name)
+    const timer = pendingWriteTimers.get(name)
+    if (timer) clearTimeout(timer)
+    pendingWriteTimers.delete(name)
+    pendingWriteValues.delete(name)
+    lastWriteTime.set(name, Date.now())
+
+    await rawSetItem(name, value)
+    const stored = await indexedDBStorage.getItem(name)
+    if (stored !== value) throw new Error(`Failed to verify restored store: ${name}`)
+}
+
+// Flush pending writes on app close
+if (typeof window !== 'undefined') {
+    window.addEventListener('beforeunload', () => {
+        for (const [name, pending] of nativeDeferredJSONWrites.entries()) {
+            if (pending.timer) clearTimeout(pending.timer)
+            void writeNativeState(name, JSON.stringify(pending.value))
+        }
+        nativeDeferredJSONWrites.clear()
+        for (const [name, pending] of deferredJSONWrites.entries()) {
+            if (pending.timer) clearTimeout(pending.timer)
+            pendingWriteValues.set(name, JSON.stringify(pending.value))
+        }
+        deferredJSONWrites.clear()
+
+        for (const timer of pendingWriteTimers.values()) clearTimeout(timer)
+        pendingWriteTimers.clear()
+        for (const [name, value] of pendingWriteValues.entries()) {
+            rawSetItem(name, value).catch(() => {})
+        }
+        pendingWriteValues.clear()
+    })
+}
+
+export const indexedDBStorage: StateStorage = {
+    getItem: async (name: string): Promise<string | null> => {
+        const pendingJSON = deferredJSONWrites.get(name)
+        if (pendingJSON) return JSON.stringify(pendingJSON.value)
+
+        // Return pending value if exists (debounced write hasn't flushed yet)
+        const pendingVal = pendingWriteValues.get(name)
+        if (pendingVal !== undefined) return pendingVal
+
+        // DB 초기화 실패 시 null 반환 (데이터 손실 방지를 위해 에러 대신 null)
+        if (dbInitFailed) {
+            console.warn(`[IndexedDB] getItem(${name}): DB init failed, returning null`)
+            return null
+        }
+
+        try {
+            const db = await getDb()
+            return new Promise((resolve, reject) => {
+                const timeoutId = setTimeout(() => {
+                    console.error(`[IndexedDB] getItem(${name}): Operation timed out`)
+                    reject(new Error(`getItem timed out for key: ${name}`))
+                }, OPERATION_TIMEOUT_MS)
+
+                try {
+                    const transaction = db.transaction(STORE_NAME, 'readonly')
+
+                    transaction.onerror = () => {
+                        clearTimeout(timeoutId)
+                        console.error(`[IndexedDB] getItem(${name}): Transaction error`, transaction.error)
+                        reject(transaction.error)
+                    }
+
+                    transaction.onabort = () => {
+                        clearTimeout(timeoutId)
+                        console.error(`[IndexedDB] getItem(${name}): Transaction aborted`)
+                        reject(new Error('Transaction aborted'))
+                    }
+
+                    const store = transaction.objectStore(STORE_NAME)
+                    const request = store.get(name)
+
+                    request.onsuccess = () => {
+                        clearTimeout(timeoutId)
+                        resolve(request.result as string || null)
+                    }
+
+                    request.onerror = () => {
+                        clearTimeout(timeoutId)
+                        console.error(`[IndexedDB] getItem(${name}): Request error`, request.error)
+                        reject(request.error)
+                    }
+                } catch (err) {
+                    clearTimeout(timeoutId)
+                    throw err
+                }
+            })
+        } catch (err) {
+            console.error(`[IndexedDB] getItem(${name}): Failed`, err)
+            return null
+        }
+    },
+
+    setItem: async (name: string, value: string): Promise<void> => {
+        if (dbInitFailed) {
+            console.warn(`[IndexedDB] setItem(${name}): DB init failed, skipping persist`)
+            return
+        }
+
+        // Store latest value (always keep the newest)
+        pendingWriteValues.set(name, value)
+
+        // Clear existing debounce timer
+        const existingTimer = pendingWriteTimers.get(name)
+        if (existingTimer) clearTimeout(existingTimer)
+
+        // Check if we need to force-write (prevent starvation during rapid changes)
+        const lastWrite = lastWriteTime.get(name) ?? 0
+        const elapsed = Date.now() - lastWrite
+
+        if (elapsed >= MAX_WRITE_INTERVAL) {
+            // Too long since last write — flush immediately
+            pendingWriteTimers.delete(name)
+            const val = pendingWriteValues.get(name)!
+            pendingWriteValues.delete(name)
+            lastWriteTime.set(name, Date.now())
+            await rawSetItem(name, val)
+            return
+        }
+
+        // Schedule debounced write
+        const debounceMs = WRITE_DEBOUNCE_MS[name] ?? DEFAULT_WRITE_DEBOUNCE
+        const timer = setTimeout(async () => {
+            pendingWriteTimers.delete(name)
+            const val = pendingWriteValues.get(name)
+            if (val !== undefined) {
+                pendingWriteValues.delete(name)
+                lastWriteTime.set(name, Date.now())
+                try {
+                    await rawSetItem(name, val)
+                } catch (err) {
+                    console.error(`[IndexedDB] Debounced write failed for ${name}:`, err)
+                }
+            }
+        }, debounceMs)
+
+        pendingWriteTimers.set(name, timer)
+    },
+    
+    removeItem: async (name: string): Promise<void> => {
+        cancelDeferredJSONWrite(name)
+        const pendingTimer = pendingWriteTimers.get(name)
+        if (pendingTimer) clearTimeout(pendingTimer)
+        pendingWriteTimers.delete(name)
+        pendingWriteValues.delete(name)
+
+        if (dbInitFailed) {
+            console.warn(`[IndexedDB] removeItem(${name}): DB init failed, skipping`)
+            return
+        }
+        
+        try {
+            const db = await getDb()
+            return new Promise((resolve, reject) => {
+                const timeoutId = setTimeout(() => {
+                    console.error(`[IndexedDB] removeItem(${name}): Operation timed out`)
+                    reject(new Error(`removeItem timed out for key: ${name}`))
+                }, OPERATION_TIMEOUT_MS)
+                
+                try {
+                    const transaction = db.transaction(STORE_NAME, 'readwrite')
+                    
+                    transaction.onerror = () => {
+                        clearTimeout(timeoutId)
+                        reject(transaction.error)
+                    }
+                    
+                    transaction.onabort = () => {
+                        clearTimeout(timeoutId)
+                        reject(new Error('Transaction aborted'))
+                    }
+                    
+                    transaction.oncomplete = () => {
+                        clearTimeout(timeoutId)
+                        resolve()
+                    }
+                    
+                    const store = transaction.objectStore(STORE_NAME)
+                    const request = store.delete(name)
+                    
+                    request.onerror = () => {
+                        clearTimeout(timeoutId)
+                        reject(request.error)
+                    }
+                } catch (err) {
+                    clearTimeout(timeoutId)
+                    throw err
+                }
+            })
+        } catch (err) {
+            console.error(`[IndexedDB] removeItem(${name}): Failed`, err)
+        }
+    },
+}
+
+/**
+ * 특정 키의 데이터 크기가 너무 크면 정리
+ * (대용량 wildcard 데이터 마이그레이션 이슈 해결용)
+ */
+export async function cleanupLargeData(key: string, maxSizeKB: number = 100): Promise<boolean> {
+    try {
+        const data = await indexedDBStorage.getItem(key)
+        if (data && data.length > maxSizeKB * 1024) {
+            console.warn(`[IndexedDB] ${key} data is too large (${(data.length / 1024).toFixed(1)}KB), cleaning up...`)
+            
+            // JSON 파싱해서 content 필드 제거
+            try {
+                const parsed = JSON.parse(data)
+                if (parsed.state?.files) {
+                    parsed.state.files = parsed.state.files.map((f: any) => {
+                        const { content, ...meta } = f
+                        return {
+                            ...meta,
+                            lineCount: Array.isArray(content) ? content.length : (meta.lineCount || 0)
+                        }
+                    })
+                    parsed.state._migrated = true
+                    await indexedDBStorage.setItem(key, JSON.stringify(parsed))
+                    console.log(`[IndexedDB] ${key} cleaned up successfully`)
+                    return true
+                }
+            } catch {
+                // JSON 파싱 실패하면 그냥 삭제
+                await indexedDBStorage.removeItem(key)
+                console.log(`[IndexedDB] ${key} removed due to parse error`)
+                return true
+            }
+        }
+        return false
+    } catch (error) {
+        console.error('[IndexedDB] cleanup error:', error)
+        return false
+    }
+}
+
+/**
+ * IndexedDB 내부에서 스토어 이름 변경 마이그레이션
+ * 기존 이름의 데이터가 있고 새 이름에 데이터가 없으면 이동
+ * 
+ * @param renames - [oldName, newName] 배열
+ */
+export async function migrateIndexedDBKeys(renames: [string, string][]): Promise<void> {
+    for (const [oldKey, newKey] of renames) {
+        try {
+            // 새 키에 이미 데이터가 있으면 스킵
+            const newData = await indexedDBStorage.getItem(newKey)
+            if (newData) {
+                console.log(`[IndexedDB Migration] ${newKey}: Already has data, skipping`)
+                // 기존 키 정리
+                const oldData = await indexedDBStorage.getItem(oldKey)
+                if (oldData) {
+                    await indexedDBStorage.removeItem(oldKey)
+                    console.log(`[IndexedDB Migration] ${oldKey}: Cleaned up old key`)
+                }
+                continue
+            }
+
+            // 기존 키에 데이터가 있는지 확인
+            const oldData = await indexedDBStorage.getItem(oldKey)
+            if (!oldData) {
+                console.log(`[IndexedDB Migration] ${oldKey}: No data to migrate`)
+                continue
+            }
+
+            // 새 키로 복사
+            console.log(`[IndexedDB Migration] ${oldKey} → ${newKey}: Migrating ${oldData.length} bytes`)
+            await indexedDBStorage.setItem(newKey, oldData)
+
+            // 검증
+            const verifyData = await indexedDBStorage.getItem(newKey)
+            if (verifyData && verifyData.length === oldData.length) {
+                // 검증 성공 - 기존 키 삭제
+                await indexedDBStorage.removeItem(oldKey)
+                console.log(`[IndexedDB Migration] ${oldKey} → ${newKey}: Complete`)
+            } else {
+                console.error(`[IndexedDB Migration] ${oldKey} → ${newKey}: Verification failed!`)
+            }
+        } catch (error) {
+            console.error(`[IndexedDB Migration] ${oldKey} → ${newKey}: Failed`, error)
+        }
+    }
+}
+
+/**
+ * localStorage에서 IndexedDB로 데이터 마이그레이션
+ * 기존 localStorage 데이터가 있고 IndexedDB에 없으면 이동
+ * 
+ * CRITICAL: This MUST complete before Zustand stores initialize!
+ */
+export async function migrateFromLocalStorage(keys: string[]): Promise<void> {
+    for (const key of keys) {
+        try {
+            // localStorage에 데이터가 있는지 확인
+            const localData = localStorage.getItem(key)
+            if (!localData) {
+                console.log(`[Migration] ${key}: No localStorage data`)
+                continue
+            }
+
+            // IndexedDB에 이미 데이터가 있는지 확인
+            const indexedData = await indexedDBStorage.getItem(key)
+            if (indexedData) {
+                // 이미 IndexedDB에 데이터 있으면 localStorage 정리만
+                console.log(`[Migration] ${key}: IndexedDB already has data, cleaning localStorage`)
+                localStorage.removeItem(key)
+                continue
+            }
+
+            // localStorage → IndexedDB 마이그레이션
+            console.log(`[Migration] ${key}: Migrating ${localData.length} bytes from localStorage to IndexedDB`)
+            await indexedDBStorage.setItem(key, localData)
+            
+            // 검증: 제대로 저장되었는지 확인
+            const verifyData = await indexedDBStorage.getItem(key)
+            if (verifyData && verifyData.length === localData.length) {
+                // 검증 성공 - localStorage 정리
+                localStorage.removeItem(key)
+                console.log(`[Migration] ${key}: Migration verified and complete`)
+            } else {
+                // 검증 실패 - localStorage 유지 (데이터 손실 방지)
+                console.error(`[Migration] ${key}: Verification failed! Keeping localStorage data`)
+            }
+        } catch (error) {
+            console.error(`[Migration] ${key}: Migration failed, keeping localStorage data`, error)
+            // 실패해도 localStorage 데이터는 유지 - 다음 시작에 다시 시도
+        }
+    }
+}
+
+/**
+ * 전체 데이터 백업 (JSON export)
+ * 데이터 손실 방지를 위한 수동 백업 기능
+ * 재생성 가능한 캐시(encodedVibe, thumbnails)는 자동으로 제외됩니다.
+ */
+
+const CHARACTER_VARIANT_NAME_PATTERN = /\s-\s([a-z0-9]{6})\s-\s(\d+)$/i
+const LEGACY_CHARACTER_VARIANT_HASH_PATTERN = /\s-\s([a-z0-9]{6})$/i
+
+type CharacterVariantBackupEntry = {
+    hash: string
+    index: number
+}
+
+type CharacterVariantBackupMetadata = {
+    version: 1
+    characters: Record<string, CharacterVariantBackupEntry>
+    presets: Record<string, CharacterVariantBackupEntry>
+}
+
+function getCharacterVariantBackupEntry(name: unknown): CharacterVariantBackupEntry | null {
+    if (typeof name !== 'string') return null
+    const match = name.trim().match(CHARACTER_VARIANT_NAME_PATTERN)
+    if (match) return { hash: match[1].toLowerCase(), index: Number(match[2]) }
+
+    const legacy = name.trim().match(LEGACY_CHARACTER_VARIANT_HASH_PATTERN)
+    return legacy ? { hash: legacy[1].toLowerCase(), index: 0 } : null
+}
+
+function collectCharacterVariantBackupEntries(items: unknown): Record<string, CharacterVariantBackupEntry> {
+    if (!Array.isArray(items)) return {}
+    return Object.fromEntries(items.flatMap(item => {
+        if (!item || typeof item !== 'object') return []
+        const { id, name } = item as { id?: unknown; name?: unknown }
+        const entry = typeof id === 'string' ? getCharacterVariantBackupEntry(name) : null
+        return entry ? [[id, entry] as const] : []
+    }))
+}
+
+function createCharacterVariantBackupMetadata(value: unknown): CharacterVariantBackupMetadata | null {
+    if (!value || typeof value !== 'object') return null
+    const state = (value as { state?: { characters?: unknown; presets?: unknown } }).state
+    if (!state) return null
+
+    const metadata: CharacterVariantBackupMetadata = {
+        version: 1,
+        characters: collectCharacterVariantBackupEntries(state.characters),
+        presets: collectCharacterVariantBackupEntries(state.presets),
+    }
+    return Object.keys(metadata.characters).length > 0 || Object.keys(metadata.presets).length > 0
+        ? metadata
+        : null
+}
+
+function stripCharacterVariantHashesForExport(value: unknown): unknown {
+    const clone = JSON.parse(JSON.stringify(value))
+    const stripName = (item: unknown) => {
+        if (item && typeof item === 'object' && 'name' in item) {
+            const named = item as { name?: unknown }
+            if (typeof named.name === 'string') {
+                named.name = named.name.replace(/\s-\s[a-z0-9]{6}\s-\s\d+$/i, '').replace(/\s-\s[a-z0-9]{6}$/i, '').trim()
+            }
+        }
+    }
+    if (clone && typeof clone === 'object') {
+        const data = clone as { state?: { characters?: unknown[]; presets?: unknown[] } }
+        data.state?.characters?.forEach(stripName)
+        data.state?.presets?.forEach(stripName)
+    }
+    return clone
+}
+
+function readCharacterVariantBackupMetadata(value: unknown): CharacterVariantBackupMetadata | null {
+    if (!value || typeof value !== 'object') return null
+    const metadata = value as Partial<CharacterVariantBackupMetadata>
+    if (metadata.version !== 1 || !metadata.characters || !metadata.presets) return null
+    return metadata as CharacterVariantBackupMetadata
+}
+
+function restoreCharacterVariantHashesFromBackup(
+    value: unknown,
+    metadata: CharacterVariantBackupMetadata | null,
+): unknown {
+    if (!metadata) return value
+    const clone = JSON.parse(JSON.stringify(value))
+    if (!clone || typeof clone !== 'object') return clone
+
+    const restore = (items: unknown, entries: Record<string, CharacterVariantBackupEntry>) => {
+        if (!Array.isArray(items)) return
+        for (const item of items) {
+            if (!item || typeof item !== 'object') continue
+            const named = item as { id?: unknown; name?: unknown }
+            const entry = typeof named.id === 'string' ? entries[named.id] : undefined
+            if (!entry || typeof named.name !== 'string') continue
+            if (!/^[a-z0-9]{6}$/i.test(entry.hash) || !Number.isInteger(entry.index) || entry.index < 0) continue
+            const baseName = named.name
+                .replace(CHARACTER_VARIANT_NAME_PATTERN, '')
+                .replace(LEGACY_CHARACTER_VARIANT_HASH_PATTERN, '')
+                .trim()
+            named.name = baseName + ' - ' + entry.hash + ' - ' + entry.index
+        }
+    }
+
+    const data = clone as { state?: { characters?: unknown; presets?: unknown } }
+    restore(data.state?.characters, metadata.characters)
+    restore(data.state?.presets, metadata.presets)
+    return clone
+}
+
+export async function exportAllData(): Promise<{ [key: string]: unknown }> {
+    const keys = [
+        'nais2-forge-generation',
+        'nais2-forge-character-store',
+        'nais2-forge-character-prompts',
+        'nais2-forge-presets',
+        'nais2-forge-settings',
+        'nais2-forge-scenes',
+        'nais2-forge-shortcuts',
+        'nais2-forge-theme',
+        'nais2-forge-wildcards',
+        'nais2-forge-layout',
+        'nais2-forge-library',
+        'nais2-forge-tools',
+    ]
+    
+    const backup: { [key: string]: unknown } = {
+        _exportedAt: new Date().toISOString(),
+        _version: '2.3',  // Version bump: always exclude regenerable cache
+    }
+    
+    for (const key of keys) {
+        try {
+            const data = await readStoredStateItem(key)
+            if (data) {
+                let parsed = JSON.parse(data)
+                
+                // Always filter out regenerable cache data
+                parsed = filterLargeImageData(key, parsed)
+                
+                if (key === 'nais2-forge-character-prompts') {
+                    const metadata = createCharacterVariantBackupMetadata(parsed)
+                    if (metadata) backup._nais2Forge = { characterVariants: metadata }
+                    backup[key] = normalizeCostumePromptMarkersForExport(stripCharacterVariantHashesForExport(parsed))
+                } else {
+                    backup[key] = normalizeCostumePromptMarkersForExport(parsed)
+                }
+            }
+        } catch (err) {
+            console.error(`[Backup] Failed to export ${key}:`, err)
+        }
+    }
+    
+    // Export wildcard-content from separate IndexedDB database
+    try {
+        const wildcardContent = await exportWildcardContent()
+        if (Object.keys(wildcardContent).length > 0) {
+            backup['nais2-forge-wildcard-content'] = wildcardContent
+            console.log('[Backup] Wildcard content exported:', Object.keys(wildcardContent).length, 'files')
+        }
+    } catch (err) {
+        console.error('[Backup] Failed to export wildcard content:', err)
+    }
+    
+    console.log('[Backup] Export complete:', Object.keys(backup).length - 2, 'stores (regenerable cache excluded)')
+    return backup
+}
+
+/**
+ * Filter out large regenerable data from store data
+ * IMPORTANT: Character/Vibe base64 images are NOT excluded because they have no file backup
+ * Only excludes: encodedVibe (can be regenerated via API), history thumbnails (files exist)
+ */
+function filterLargeImageData(key: string, data: unknown): unknown {
+    if (!data || typeof data !== 'object') return data
+    
+    const obj = data as Record<string, unknown>
+    
+    // Handle Zustand persist wrapper structure: { state: {...}, version: number }
+    if ('state' in obj && 'version' in obj) {
+        return {
+            ...obj,
+            state: filterLargeImageData(key, obj.state)
+        }
+    }
+    
+    switch (key) {
+        case 'nais2-forge-character-store':
+            // Only remove encodedVibe (can be regenerated via API)
+            // KEEP base64 images - they have no file backup!
+            return {
+                ...obj,
+                characterImages: Array.isArray(obj.characterImages) 
+                    ? obj.characterImages.map((img: Record<string, unknown>) => ({
+                        ...img,
+                        // base64 is KEPT - no file backup exists
+                        encodedVibe: undefined  // Can be regenerated via API
+                    }))
+                    : obj.characterImages,
+                vibeImages: Array.isArray(obj.vibeImages)
+                    ? obj.vibeImages.map((img: Record<string, unknown>) => ({
+                        ...img,
+                        // base64 is KEPT - no file backup exists
+                        encodedVibe: undefined  // Can be regenerated via API
+                    }))
+                    : obj.vibeImages,
+            }
+            
+        case 'nais2-forge-generation':
+            return {
+                ...obj,
+                history: undefined,
+                sourceImage: null,
+                previewImage: null,
+                mask: null,
+            }
+            
+        default:
+            return data
+    }
+}
+
+/**
+ * Export all wildcard content from separate IndexedDB
+ * Fixed: Race condition where getAllRequest might complete before handler is attached
+ */
+async function exportWildcardContent(): Promise<{ [id: string]: string[] }> {
+    return new Promise((resolve, reject) => {
+        // Add timeout to prevent infinite waiting
+        const timeout = setTimeout(() => {
+            console.error('[Backup] Wildcard export timed out after 30s')
+            resolve({}) // Return empty instead of rejecting to allow backup to continue
+        }, 30000)
+        
+        const request = indexedDB.open('nais2-forge-wildcard-content', 1)
+        
+        request.onerror = () => {
+            clearTimeout(timeout)
+            reject(request.error)
+        }
+        
+        request.onsuccess = () => {
+            const db = request.result
+            if (!db.objectStoreNames.contains('contents')) {
+                clearTimeout(timeout)
+                resolve({})
+                return
+            }
+            
+            const transaction = db.transaction('contents', 'readonly')
+            const store = transaction.objectStore('contents')
+            const getAllRequest = store.getAll()
+            const getAllKeysRequest = store.getAllKeys()
+            
+            const result: { [id: string]: string[] } = {}
+            let keys: string[] = []
+            let values: string[][] = []
+            let keysReady = false
+            let valuesReady = false
+            
+            const tryResolve = () => {
+                if (keysReady && valuesReady) {
+                    clearTimeout(timeout)
+                    for (let i = 0; i < keys.length; i++) {
+                        result[keys[i]] = values[i]
+                    }
+                    resolve(result)
+                }
+            }
+            
+            getAllKeysRequest.onsuccess = () => {
+                keys = getAllKeysRequest.result as string[]
+                keysReady = true
+                tryResolve()
+            }
+            
+            getAllRequest.onsuccess = () => {
+                values = getAllRequest.result as string[][]
+                valuesReady = true
+                tryResolve()
+            }
+            
+            transaction.onerror = () => {
+                clearTimeout(timeout)
+                reject(transaction.error)
+            }
+        }
+        
+        request.onupgradeneeded = (event) => {
+            const db = (event.target as IDBOpenDBRequest).result
+            if (!db.objectStoreNames.contains('contents')) {
+                db.createObjectStore('contents')
+            }
+        }
+    })
+}
+
+/**
+ * Import wildcard content to separate IndexedDB
+ */
+async function importWildcardContent(content: { [id: string]: string[] }): Promise<void> {
+    return new Promise((resolve, reject) => {
+        const request = indexedDB.open('nais2-forge-wildcard-content', 1)
+        
+        request.onerror = () => reject(request.error)
+        
+        request.onsuccess = () => {
+            const db = request.result
+            const transaction = db.transaction('contents', 'readwrite')
+            const store = transaction.objectStore('contents')
+            
+            for (const [id, lines] of Object.entries(content)) {
+                store.put(lines, id)
+            }
+            
+            transaction.oncomplete = () => {
+                console.log('[Restore] Wildcard content restored:', Object.keys(content).length, 'files')
+                resolve()
+            }
+            transaction.onerror = () => reject(transaction.error)
+        }
+        
+        request.onupgradeneeded = (event) => {
+            const db = (event.target as IDBOpenDBRequest).result
+            if (!db.objectStoreNames.contains('contents')) {
+                db.createObjectStore('contents')
+            }
+        }
+    })
+}
+
+/**
+ * 백업 데이터 복원
+ * @param backup - exportAllData()로 생성된 백업 데이터
+ * @param overwrite - true면 기존 데이터 덮어쓰기, false면 빈 키만 복원
+ */
+export async function importAllData(backup: { [key: string]: unknown }, overwrite = false): Promise<{ success: string[], failed: string[] }> {
+    const result = { success: [] as string[], failed: [] as string[] }
+    const forgeMetadata = backup._nais2Forge as { characterVariants?: unknown } | undefined
+    const characterVariantMetadata = readCharacterVariantBackupMetadata(forgeMetadata?.characterVariants)
+    
+    const entries = new Map<string, unknown>()
+    for (const [sourceKey, value] of Object.entries(backup)) {
+        if (sourceKey.startsWith('_')) continue
+        const key = sourceKey.startsWith('nais2-forge-')
+            ? sourceKey
+            : sourceKey.startsWith('nais2-')
+                ? `nais2-forge-${sourceKey.slice('nais2-'.length)}`
+                : sourceKey
+
+        // Prefer native Forge data when a mixed backup contains both key formats.
+        if (!entries.has(key) || sourceKey.startsWith('nais2-forge-')) {
+            entries.set(key, value)
+        }
+    }
+
+    for (const [key, value] of entries) {
+        
+        // Handle wildcard-content separately (stored in separate IndexedDB)
+        if (key === 'nais2-forge-wildcard-content') {
+            try {
+                await importWildcardContent(value as { [id: string]: string[] })
+                result.success.push(key)
+            } catch (err) {
+                console.error(`[Restore] ${key}: Failed`, err)
+                result.failed.push(key)
+            }
+            continue
+        }
+        
+        try {
+            if (!overwrite) {
+                const existing = await readStoredStateItem(key)
+                if (existing) {
+                    console.log(`[Restore] ${key}: Skipping (data exists)`)
+                    continue
+                }
+            }
+            
+            const restoredValue = normalizeCostumePromptMarkersForExport(
+                key === 'nais2-forge-character-prompts'
+                    ? restoreCharacterVariantHashesFromBackup(value, characterVariantMetadata)
+                    : value
+            )
+            await setStorageItemImmediately(key, JSON.stringify(restoredValue))
+            result.success.push(key)
+            console.log(`[Restore] ${key}: Restored`)
+        } catch (err) {
+            console.error(`[Restore] ${key}: Failed`, err)
+            result.failed.push(key)
+        }
+    }
+    
+    console.log('[Restore] Complete:', result.success.length, 'success,', result.failed.length, 'failed')
+    return result
+}
+
+/**
+ * 특정 스토어 데이터 크기 확인 (디버깅용)
+ */
+export async function getStoreSizes(): Promise<{ [key: string]: number }> {
+    const keys = [
+        'nais2-forge-generation',
+        'nais2-forge-character-store',
+        'nais2-forge-character-prompts',
+        'nais2-forge-presets',
+        'nais2-forge-settings',
+        'nais2-forge-scenes',
+        'nais2-forge-wildcards',
+        'nais2-forge-library',
+    ]
+    
+    const sizes: { [key: string]: number } = {}
+    
+    for (const key of keys) {
+        try {
+            const data = await readStoredStateItem(key)
+            sizes[key] = data ? data.length : 0
+        } catch {
+            sizes[key] = -1 // 에러 표시
+        }
+    }
+    
+    return sizes
+}

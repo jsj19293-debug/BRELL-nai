@@ -1,0 +1,2404 @@
+import { memo, useState, useEffect, useRef, useCallback, useMemo, MouseEvent as ReactMouseEvent } from 'react'
+import { createPortal } from 'react-dom'
+import { useLocation } from 'react-router-dom'
+import { useShallow } from 'zustand/react/shallow'
+import { useTranslation } from 'react-i18next'
+import {
+    X,
+    Plus,
+    Trash2,
+    Users,
+    ChevronDown,
+    ChevronUp,
+    MapPin,
+    Eye,
+    EyeOff,
+    Copy,
+    User,
+    SlidersHorizontal,
+    Pencil,
+    Search,
+    Folder,
+    FolderOpen,
+    FolderPlus,
+    ChevronRight,
+    Save,
+    Palette,
+    Menu,
+    CircleHelp,
+    ListChecks,
+} from 'lucide-react'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { AutocompleteTextarea } from '@/components/ui/AutocompleteTextarea'
+import { ScrollArea } from '@/components/ui/scroll-area'
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
+import {
+    Dialog,
+    DialogContent,
+    DialogHeader,
+    DialogTitle,
+} from '@/components/ui/dialog'
+import {
+    ContextMenu,
+    ContextMenuContent,
+    ContextMenuItem,
+    ContextMenuTrigger,
+    ContextMenuSub,
+    ContextMenuSubTrigger,
+    ContextMenuSubContent,
+    ContextMenuSeparator,
+} from '@/components/ui/context-menu'
+import {
+    useCharacterPromptStore,
+    CHARACTER_COLORS,
+    CharacterPrompt,
+    CharacterGroup,
+    FOLDER_COLORS,
+    getCharacterGroupDescendantIds,
+    getCharacterGroupPath,
+} from '@/stores/character-prompt-store'
+import { useSettingsStore } from '@/stores/settings-store'
+import { useGenerationStore } from '@/stores/generation-store'
+import { Tip } from '@/components/ui/tooltip'
+import { cn } from '@/lib/utils'
+import { getCharacterGender, type CharacterGender } from '@/lib/character-gender'
+import {
+    fitCharacterPositionRect,
+    getContainedImageRect,
+    type CharacterPositionRect,
+} from '@/lib/character-position-grid'
+import { getModelCapabilities } from '@/lib/model-capabilities'
+import { COSTUME_PROMPT_MARKER, splitCostumePrompt } from '@/lib/costume-prompt'
+import { toast } from '@/components/ui/use-toast'
+import { ConfirmDialog } from '@/components/ui/confirm-dialog'
+import { expandSelectionToStacks, pruneSelection, toggleSelectAll } from '@/lib/character-bulk-delete'
+import { CharacterPositionBoard } from '@/components/character/CharacterPositionBoard'
+import {
+    DndContext,
+    closestCenter,
+    PointerSensor,
+    useSensor,
+    useSensors,
+    DragEndEvent,
+    DragStartEvent,
+    useDroppable,
+} from '@dnd-kit/core'
+import {
+    SortableContext,
+    useSortable,
+    horizontalListSortingStrategy,
+    verticalListSortingStrategy,
+} from '@dnd-kit/sortable'
+import { CSS } from '@dnd-kit/utilities'
+
+interface CharacterPromptPanelProps {
+    open: boolean
+    onOpenChange: (open: boolean) => void
+}
+
+
+const COSTUME_MARKER = `\n${COSTUME_PROMPT_MARKER}\n`
+const FOLDER_PANEL_WIDTH_STORAGE_KEY = 'nais2-forge-character-folder-panel-width'
+
+const joinCostumePrompt = (characterPrompt: string, costumePrompt: string) => {
+    const cleanCharacter = characterPrompt.replace(/\s+$/g, '')
+    const cleanCostume = costumePrompt.replace(/^\s+/g, '')
+    if (!cleanCostume.trim()) return cleanCharacter
+    return `${cleanCharacter}${COSTUME_MARKER}${cleanCostume}`
+}
+
+const VARIANT_NAME_PATTERN = /\s-\s([a-z0-9]{6})\s-\s(\d+)$/i
+const LEGACY_VARIANT_HASH_PATTERN = /\s-\s([a-z0-9]{6})$/i
+
+const getStoredVariantParts = (name?: string) => {
+    const rawName = name?.trim() || ''
+    const match = rawName.match(VARIANT_NAME_PATTERN)
+    if (match) {
+        return {
+            displayName: rawName.slice(0, match.index).trim(),
+            hash: match[1],
+            index: Number(match[2]),
+        }
+    }
+    const legacy = rawName.match(LEGACY_VARIANT_HASH_PATTERN)
+    if (legacy) {
+        const legacyBase = rawName.slice(0, legacy.index).trim()
+        const indexMatch = legacyBase.match(/(\d+)$/)
+        return {
+            displayName: legacyBase.replace(/\d+$/g, '').trim() || legacyBase,
+            hash: legacy[1],
+            index: indexMatch ? Number(indexMatch[1]) : 0,
+        }
+    }
+    return { displayName: rawName, hash: undefined as string | undefined, index: 0 }
+}
+
+const getVariantHash = (char: CharacterPrompt) => getStoredVariantParts(char.name).hash
+const getVariantBaseName = (char: CharacterPrompt, fallback: string) => getStoredVariantParts(char.name).displayName || fallback
+const getVariantIndex = (char: CharacterPrompt) => getStoredVariantParts(char.name).index
+const getVariantName = (displayName: string, index: number, hash: string) => `${displayName.trim() || 'Character'} - ${hash} - ${index}`
+const getStackKey = (char: CharacterPrompt) => {
+    const hash = getVariantHash(char)
+    return hash ? `${char.groupId || 'root'}:${hash}` : char.id
+}
+const makeVariantHash = (baseName: string, taken: Set<string>) => {
+    let seed = `${baseName}:${Date.now()}:${Math.random()}`
+    for (let attempt = 0; attempt < 10; attempt++) {
+        let value = 0
+        for (let i = 0; i < seed.length; i++) value = ((value << 5) - value + seed.charCodeAt(i)) | 0
+        const hash = Math.abs(value).toString(36).slice(0, 6).padEnd(6, '0')
+        if (!taken.has(hash)) return hash
+        seed += `:${attempt}`
+    }
+    return Math.random().toString(36).slice(2, 8).padEnd(6, '0')
+}
+
+export function CharacterPromptPanel({ open, onOpenChange }: CharacterPromptPanelProps) {
+    const { t } = useTranslation()
+    const {
+        characters,
+        groups,
+        addCharacter,
+        updateCharacter,
+        removeCharacter,
+        removeCharacters,
+        setPosition,
+        toggleEnabled,
+        disableAll,
+        positionEnabled,
+        setPositionEnabled,
+        addGroup,
+        updateGroup,
+        deleteGroup,
+        moveGroup,
+        reorderGroups,
+        toggleGroupCollapsed,
+        toggleGroupEnabled,
+        moveCharacterToGroup,
+        saveCharacterAsPreset,
+        reorderCharactersInGroup,
+    } = useCharacterPromptStore(useShallow(state => ({
+        characters: state.characters,
+        groups: state.groups,
+        addCharacter: state.addCharacter,
+        updateCharacter: state.updateCharacter,
+        removeCharacter: state.removeCharacter,
+        removeCharacters: state.removeCharacters,
+        setPosition: state.setPosition,
+        toggleEnabled: state.toggleEnabled,
+        disableAll: state.disableAll,
+        positionEnabled: state.positionEnabled,
+        setPositionEnabled: state.setPositionEnabled,
+        addGroup: state.addGroup,
+        updateGroup: state.updateGroup,
+        deleteGroup: state.deleteGroup,
+        moveGroup: state.moveGroup,
+        reorderGroups: state.reorderGroups,
+        toggleGroupCollapsed: state.toggleGroupCollapsed,
+        toggleGroupEnabled: state.toggleGroupEnabled,
+        moveCharacterToGroup: state.moveCharacterToGroup,
+        saveCharacterAsPreset: state.saveCharacterAsPreset,
+        reorderCharactersInGroup: state.reorderCharactersInGroup,
+    })))
+
+    const [expandedId, setExpandedId] = useState<string | null>(null)
+    const [positionDialogOpen, setPositionDialogOpen] = useState(false)
+    const [searchQuery, setSearchQuery] = useState('')
+    const [editingGroupId, setEditingGroupId] = useState<string | null>(null)
+    const [editingGroupName, setEditingGroupName] = useState('')
+    const editingGroupInputRef = useRef<HTMLInputElement | null>(null)
+    const [activeId, setActiveId] = useState<string | null>(null)
+    const [selectedGroupId, setSelectedGroupId] = useState<string | null>(null)
+    // 일괄 삭제: 선택 모드에서 카드마다 체크박스를 보여주고, 체크한 것을 한 번에 지운다.
+    const [selectMode, setSelectMode] = useState(false)
+    const [selectedCharacterIds, setSelectedCharacterIds] = useState<Set<string>>(new Set())
+    const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false)
+    const [genderFilter, setGenderFilter] = useState<'all' | CharacterGender>('all')
+    const [folderPanelOpen, setFolderPanelOpen] = useState(true)
+    const folderPanelRef = useRef<HTMLDivElement | null>(null)
+    const [folderPanelWidth, setFolderPanelWidth] = useState(() => {
+        const savedWidth = Number(window.localStorage.getItem(FOLDER_PANEL_WIDTH_STORAGE_KEY))
+        return Number.isFinite(savedWidth) && savedWidth > 0
+            ? Math.min(320, Math.max(120, savedWidth))
+            : 150
+    })
+    const expertCharacterPromptFolderBrowserEnabled = useSettingsStore(state => state.expertCharacterPromptFolderBrowserEnabled)
+    const expertCharacterPromptLayoutEnabled = useSettingsStore(state => state.expertCharacterPromptLayoutEnabled)
+    const expertCharacterPromptVariantsEnabled = useSettingsStore(state => state.expertCharacterPromptVariantsEnabled)
+    const expertCharacterPromptGenderIndicatorEnabled = useSettingsStore(state => state.expertCharacterPromptGenderIndicatorEnabled)
+    const characterPromptGenderIndicatorMode = useSettingsStore(state => state.characterPromptGenderIndicatorMode)
+    const activeCharacterLimit = getModelCapabilities(useGenerationStore(state => state.model)).maxCharacterPrompts
+
+    const startFolderPanelResize = useCallback((event: ReactMouseEvent<HTMLDivElement>) => {
+        event.preventDefault()
+        const startX = event.clientX
+        const startWidth = folderPanelWidth
+        const containerWidth = event.currentTarget.parentElement?.getBoundingClientRect().width || 500
+        const maxWidth = Math.max(120, Math.min(320, containerWidth - 180))
+        let nextWidth = startWidth
+        const previousCursor = document.body.style.cursor
+        const previousUserSelect = document.body.style.userSelect
+
+        const handleMouseMove = (moveEvent: MouseEvent) => {
+            nextWidth = Math.min(maxWidth, Math.max(120, startWidth + moveEvent.clientX - startX))
+            folderPanelRef.current?.style.setProperty('width', `${nextWidth}px`)
+        }
+        const handleMouseUp = () => {
+            setFolderPanelWidth(currentWidth => currentWidth === nextWidth ? currentWidth : nextWidth)
+            window.localStorage.setItem(FOLDER_PANEL_WIDTH_STORAGE_KEY, String(Math.round(nextWidth)))
+            document.body.style.cursor = previousCursor
+            document.body.style.userSelect = previousUserSelect
+            window.removeEventListener('mousemove', handleMouseMove)
+            window.removeEventListener('mouseup', handleMouseUp)
+            window.removeEventListener('blur', handleMouseUp)
+        }
+
+        document.body.style.cursor = 'col-resize'
+        document.body.style.userSelect = 'none'
+        window.addEventListener('mousemove', handleMouseMove)
+        window.addEventListener('mouseup', handleMouseUp)
+        window.addEventListener('blur', handleMouseUp)
+    }, [folderPanelWidth])
+
+    // DnD sensors
+    const sensors = useSensors(
+        useSensor(PointerSensor, {
+            activationConstraint: {
+                distance: 8,
+            },
+        })
+    )
+
+    const handleDragStart = (event: DragStartEvent) => {
+        const dragId = event.active.id as string
+        if (dragId.startsWith('variant-')) return
+        setActiveId(dragId)
+        setExpandedId(null)
+    }
+
+    const handleDragEnd = (event: DragEndEvent) => {
+        const { active, over } = event
+        setActiveId(null)
+        
+        if (!over) return
+        
+        const activeItemId = active.id as string
+        const overId = over.id as string
+
+        if (activeItemId.startsWith('variant-')) return
+
+        if (activeItemId.startsWith('folder-')) {
+            if (overId.startsWith('folder-')) {
+                reorderGroups(
+                    activeItemId.replace('folder-', ''),
+                    overId.replace('folder-', '')
+                )
+            }
+            return
+        }
+
+        const activeCharId = activeItemId
+        
+        // 폴더에 드롭한 경우
+        if (overId.startsWith('folder-')) {
+            const folderId = overId.replace('folder-', '')
+            moveCharacterToGroup(activeCharId, folderId)
+            return
+        }
+        
+        // 미분류 영역에 드롭한 경우
+        if (overId === 'ungrouped-zone') {
+            moveCharacterToGroup(activeCharId, undefined)
+            return
+        }
+        
+        // 캐릭터 위에 드롭한 경우
+        const activeChar = characters.find(c => c.id === activeCharId)
+        const overChar = characters.find(c => c.id === overId)
+        
+        if (activeChar && overChar) {
+            // 다른 그룹의 캐릭터 위에 드롭한 경우: 해당 그룹으로 이동
+            if (activeChar.groupId !== overChar.groupId) {
+                moveCharacterToGroup(activeCharId, overChar.groupId)
+                return
+            }
+            
+            // 같은 그룹 내에서 순서 변경
+            if (activeCharId !== overId) {
+                reorderCharactersInGroup(activeCharId, overId, activeChar.groupId)
+            }
+        }
+    }
+
+    // Reopen with all existing cards collapsed.
+    useEffect(() => {
+        if (!open) {
+            setExpandedId(null)
+            setPositionDialogOpen(false)
+        }
+    }, [open])
+
+    const handleAddCharacter = () => {
+        addCharacter(expertCharacterPromptFolderBrowserEnabled && selectedGroupId
+            ? { groupId: selectedGroupId }
+            : undefined
+        )
+        // 새 캐릭터 자동 확장
+        setTimeout(() => {
+            const newChar = useCharacterPromptStore.getState().characters.slice(-1)[0]
+            if (newChar) {
+                setExpandedId(newChar.id)
+            }
+        }, 0)
+    }
+
+    const handleDuplicate = useCallback((char: CharacterPrompt) => {
+        addCharacter()
+        setTimeout(() => {
+            const newChar = useCharacterPromptStore.getState().characters.slice(-1)[0]
+            if (newChar) {
+                updateCharacter(newChar.id, {
+                    prompt: char.prompt,
+                    negative: char.negative,
+                    groupId: char.groupId, // 같은 폴더에 복제
+                })
+                setExpandedId(newChar.id)
+            }
+        }, 0)
+    }, [addCharacter, updateCharacter])
+
+    const activateVariant = useCallback((id: string) => {
+        const state = useCharacterPromptStore.getState()
+        const selected = state.characters.find(c => c.id === id)
+        if (!selected) return
+        const stackKey = getStackKey(selected)
+        const stackIsActive = state.characters.some(char => getStackKey(char) === stackKey && char.enabled)
+        if (!stackIsActive && state.characters.filter(char => char.enabled).length >= activeCharacterLimit) return
+        let changed = false
+        const nextCharacters = state.characters.map((char) => {
+            if (getStackKey(char) !== stackKey) return char
+            const enabled = char.id === id
+            if (char.enabled === enabled) return char
+            changed = true
+            return { ...char, enabled }
+        })
+        if (changed) useCharacterPromptStore.setState({ characters: nextCharacters })
+        setExpandedId(id)
+    }, [activeCharacterLimit])
+
+    const handleReorderVariants = useCallback((activeId: string, overId: string) => {
+        if (activeId === overId) return
+        useCharacterPromptStore.setState(state => {
+            const active = state.characters.find(character => character.id === activeId)
+            const over = state.characters.find(character => character.id === overId)
+            if (!active || !over || getStackKey(active) !== getStackKey(over)) return state
+
+            const stack = state.characters
+                .filter(character => getStackKey(character) === getStackKey(active))
+                .sort((a, b) => getVariantIndex(a) - getVariantIndex(b))
+            const fromIndex = stack.findIndex(character => character.id === activeId)
+            const toIndex = stack.findIndex(character => character.id === overId)
+            if (fromIndex === -1 || toIndex === -1) return state
+
+            const reordered = [...stack]
+            const [moved] = reordered.splice(fromIndex, 1)
+            reordered.splice(toIndex, 0, moved)
+            const hash = getVariantHash(active)
+            if (!hash) return state
+
+            const reorderedById = new Map(reordered.map((character, index) => [
+                character.id,
+                {
+                    ...character,
+                    name: getVariantName(getVariantBaseName(character, 'Character'), index, hash),
+                },
+            ]))
+            const stackIds = new Set(reorderedById.keys())
+            const nextCharacters: CharacterPrompt[] = []
+            let inserted = false
+            for (const character of state.characters) {
+                if (!stackIds.has(character.id)) {
+                    nextCharacters.push(character)
+                    continue
+                }
+                if (!inserted) {
+                    nextCharacters.push(...reordered.map(character => reorderedById.get(character.id)!))
+                    inserted = true
+                }
+            }
+            return { characters: nextCharacters }
+        })
+    }, [])
+
+
+    const handleAddVariant = useCallback((char: CharacterPrompt) => {
+        const baseName = getVariantBaseName(char, char.name || char.prompt.split(',')[0]?.trim() || 'Character')
+        const takenHashes = new Set(characters.map(c => getVariantHash(c)).filter(Boolean) as string[])
+        const hash = getVariantHash(char) || makeVariantHash(baseName, takenHashes)
+        const stackCharacters = characters
+            .filter(c => c.id === char.id || getVariantHash(c) === hash)
+            .sort((a, b) => getVariantIndex(a) - getVariantIndex(b))
+        if (stackCharacters.length >= 5) return
+
+        const selectedStackIndex = stackCharacters.findIndex(variant => variant.id === char.id)
+        if (selectedStackIndex === -1) return
+
+        const newVariantId = `${Date.now()}${Math.random().toString(36).slice(2, 11)}`
+        const insertAfterIndex = selectedStackIndex + 1
+        const reindexedNames = new Map(stackCharacters.map((variant, index) => [
+            variant.id,
+            getVariantName(
+                getVariantBaseName(variant, baseName),
+                index >= insertAfterIndex ? index + 1 : index,
+                hash,
+            ),
+        ]))
+        const newVariant: CharacterPrompt = {
+            id: newVariantId,
+            name: getVariantName(baseName, insertAfterIndex, hash),
+            prompt: char.prompt,
+            negative: char.negative,
+            enabled: true,
+            groupId: char.groupId,
+            promptEnabled: char.promptEnabled ?? true,
+            negativeEnabled: char.negativeEnabled ?? true,
+            costumeEnabled: char.costumeEnabled ?? true,
+            position: char.position,
+        }
+
+        useCharacterPromptStore.setState(state => {
+            const updatedCharacters = state.characters.map(variant => {
+                const name = reindexedNames.get(variant.id)
+                return name ? { ...variant, name } : variant
+            })
+            const characterIndex = updatedCharacters.findIndex(variant => variant.id === char.id)
+            return {
+                characters: [
+                    ...updatedCharacters.slice(0, characterIndex + 1),
+                    newVariant,
+                    ...updatedCharacters.slice(characterIndex + 1),
+                ],
+            }
+        })
+        activateVariant(newVariantId)
+    }, [activateVariant, characters])
+
+    const handleToggleExpand = useCallback((id: string) => {
+        setExpandedId(prev => prev === id ? null : id)
+    }, [])
+
+    const handleFocusCharacter = useCallback((character: CharacterPrompt) => {
+        setSearchQuery('')
+        setSelectedGroupId(character.groupId && groups.some(group => group.id === character.groupId)
+            ? character.groupId
+            : null
+        )
+        if (character.groupId) {
+            const expandedIds = new Set<string>()
+            let current = groups.find(group => group.id === character.groupId)
+            while (current) {
+                expandedIds.add(current.id)
+                current = current.parentId ? groups.find(group => group.id === current?.parentId) : undefined
+            }
+            useCharacterPromptStore.setState(state => ({
+                groups: state.groups.map(group =>
+                    expandedIds.has(group.id) && group.collapsed ? { ...group, collapsed: false } : group
+                )
+            }))
+        }
+        setExpandedId(character.id)
+
+        requestAnimationFrame(() => requestAnimationFrame(() => {
+            const card = Array.from(document.querySelectorAll<HTMLElement>('[data-character-prompt-id]'))
+                .find(element => element.dataset.characterPromptId === character.id)
+            card?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+        }))
+    }, [groups])
+
+    const handleCreateGroup = (
+        parentId: string | undefined = expertCharacterPromptFolderBrowserEnabled
+            ? selectedGroupId || undefined
+            : undefined
+    ) => {
+        const baseName = t('characterPanel.newFolderName', '새폴더')
+        const existingNames = groups.map(g => g.name)
+        
+        // 새폴더, 새폴더(2), 새폴더(3) 형태로 이름 생성
+        let newName = baseName
+        let counter = 2
+        while (existingNames.includes(newName)) {
+            newName = `${baseName}(${counter})`
+            counter++
+        }
+        
+        const newGroupId = addGroup(newName, parentId)
+        if (parentId) updateGroup(parentId, { collapsed: false })
+        setSelectedGroupId(newGroupId)
+        setEditingGroupId(newGroupId)
+        setEditingGroupName(newName)
+    }
+
+    const handleSaveGroupName = useCallback((groupId: string) => {
+        if (editingGroupName.trim()) {
+            updateGroup(groupId, { name: editingGroupName.trim() })
+        }
+        setEditingGroupId(null)
+        setEditingGroupName('')
+    }, [editingGroupName, updateGroup])
+
+    useEffect(() => {
+        if (!editingGroupId) return
+
+        const handleOutsidePointerDown = (event: PointerEvent) => {
+            if (editingGroupInputRef.current?.contains(event.target as Node)) return
+            handleSaveGroupName(editingGroupId)
+        }
+
+        document.addEventListener('pointerdown', handleOutsidePointerDown, true)
+        return () => document.removeEventListener('pointerdown', handleOutsidePointerDown, true)
+    }, [editingGroupId, handleSaveGroupName])
+
+    const handleDeleteGroup = (groupId: string) => {
+        const parentId = groups.find(group => group.id === groupId)?.parentId || null
+        deleteGroup(groupId)
+        if (selectedGroupId === groupId) setSelectedGroupId(parentId)
+    }
+
+    const handleSaveAsPreset = (char: CharacterPrompt) => {
+        saveCharacterAsPreset(char.id)
+        toast({
+            title: t('characterPanel.savedAsPreset', '프리셋으로 저장됨'),
+            description: char.name || char.prompt.split(',')[0]?.trim() || 'Character',
+        })
+    }
+
+    const getVisibleStackCharacters = useCallback((list: CharacterPrompt[]) => {
+        if (!expertCharacterPromptVariantsEnabled) return list
+        const stacks = new Map<string, CharacterPrompt[]>()
+        for (const char of list) {
+            const key = getStackKey(char)
+            const current = stacks.get(key) || []
+            current.push(char)
+            stacks.set(key, current)
+        }
+        return Array.from(stacks.values()).map((stack) => {
+            const sorted = stack.sort((a, b) => getVariantIndex(a) - getVariantIndex(b))
+            return sorted.find(c => c.enabled) || sorted[0]
+        })
+    }, [expertCharacterPromptVariantsEnabled])
+
+    const normalizedSearch = searchQuery.trim().toLowerCase()
+    const characterMatchesSearch = useCallback((character: CharacterPrompt) => {
+        if (expertCharacterPromptGenderIndicatorEnabled && genderFilter !== 'all' && getCharacterGender(character.prompt) !== genderFilter) {
+            return false
+        }
+        if (!normalizedSearch) return true
+        const name = character.name?.toLowerCase() || ''
+        const promptPreview = character.prompt?.split(',')[0]?.trim().toLowerCase() || ''
+        return name.includes(normalizedSearch) || promptPreview.includes(normalizedSearch)
+    }, [expertCharacterPromptGenderIndicatorEnabled, genderFilter, normalizedSearch])
+    const groupById = useMemo(() => new Map(groups.map(group => [group.id, group])), [groups])
+    const groupIds = useMemo(() => new Set(groupById.keys()), [groupById])
+    const characterIndexById = useMemo(
+        () => new Map(characters.map((character, index) => [character.id, index])),
+        [characters]
+    )
+    const groupChildren = useMemo(() => {
+        const children = new Map<string, CharacterGroup[]>()
+        for (const group of groups) {
+            const parentId = group.parentId && groupIds.has(group.parentId) ? group.parentId : 'root'
+            const current = children.get(parentId) || []
+            current.push(group)
+            children.set(parentId, current)
+        }
+        return children
+    }, [groupIds, groups])
+    const selectedGroup = selectedGroupId ? groupById.get(selectedGroupId) : undefined
+
+    useEffect(() => {
+        if (selectedGroupId && !groupIds.has(selectedGroupId)) setSelectedGroupId(null)
+    }, [groupIds, selectedGroupId])
+
+    const visibleStackCharacters = useMemo(
+        () => getVisibleStackCharacters(characters),
+        [characters, getVisibleStackCharacters]
+    )
+
+    const visibleCharacters = useMemo(() => {
+        return visibleStackCharacters.filter(character => {
+            if (normalizedSearch) return characterMatchesSearch(character)
+            if (!characterMatchesSearch(character)) return false
+            return selectedGroupId
+                ? character.groupId === selectedGroupId
+                : !character.groupId || !groupIds.has(character.groupId)
+        })
+    }, [characterMatchesSearch, groupIds, normalizedSearch, selectedGroupId, visibleStackCharacters])
+
+    const legacyUngroupedCharacters = useMemo(() => getVisibleStackCharacters(
+        visibleStackCharacters.filter(character =>
+            (!character.groupId || !groupIds.has(character.groupId)) && characterMatchesSearch(character)
+        )
+    ), [characterMatchesSearch, getVisibleStackCharacters, groupIds, visibleStackCharacters])
+
+    const groupCharacterCounts = useMemo(() => {
+        const directCounts = new Map<string, number>()
+        for (const character of visibleStackCharacters.filter(characterMatchesSearch)) {
+            if (character.groupId && groupIds.has(character.groupId)) {
+                directCounts.set(character.groupId, (directCounts.get(character.groupId) || 0) + 1)
+            }
+        }
+        const totals = new Map<string, number>()
+        const countGroup = (groupId: string, visited: Set<string>): number => {
+            if (totals.has(groupId)) return totals.get(groupId)!
+            if (visited.has(groupId)) return 0
+            const nextVisited = new Set(visited).add(groupId)
+            const total = (directCounts.get(groupId) || 0)
+                + (groupChildren.get(groupId) || []).reduce(
+                    (sum, child) => sum + countGroup(child.id, nextVisited),
+                    0
+                )
+            totals.set(groupId, total)
+            return total
+        }
+        for (const group of groups) countGroup(group.id, new Set())
+        return totals
+    }, [characterMatchesSearch, groupChildren, groupIds, groups, visibleStackCharacters])
+
+    const ungroupedCount = useMemo(() => getVisibleStackCharacters(
+        visibleStackCharacters.filter(character => (!character.groupId || !groupIds.has(character.groupId)) && characterMatchesSearch(character))
+    ).length, [characterMatchesSearch, getVisibleStackCharacters, groupIds, visibleStackCharacters])
+    const enabledCharacters = useMemo(
+        () => characters.filter(character => character.enabled),
+        [characters]
+    )
+    const enabledCharacterCount = enabledCharacters.length
+    const genderFilterActive = expertCharacterPromptGenderIndicatorEnabled && genderFilter !== 'all'
+    const shouldRenderGroup = useCallback(
+        (group: CharacterGroup) => !genderFilterActive || (groupCharacterCounts.get(group.id) || 0) > 0,
+        [genderFilterActive, groupCharacterCounts]
+    )
+    const visibleRootGroups = useMemo(
+        () => (groupChildren.get('root') || []).filter(shouldRenderGroup),
+        [groupChildren, shouldRenderGroup]
+    )
+
+    useEffect(() => {
+        const selectedGroup = selectedGroupId ? groupById.get(selectedGroupId) : undefined
+        if (selectedGroup && !shouldRenderGroup(selectedGroup)) setSelectedGroupId(null)
+    }, [groupById, selectedGroupId, shouldRenderGroup])
+
+    // 지금 목록에 보이는 카드 (선택·전체 선택의 대상). 폴더 보기에서는 고른 폴더, 아니면 전체.
+    const selectableIds = useMemo(
+        () => (expertCharacterPromptFolderBrowserEnabled ? visibleCharacters : visibleStackCharacters.filter(characterMatchesSearch))
+            .map(character => character.id),
+        [characterMatchesSearch, expertCharacterPromptFolderBrowserEnabled, visibleCharacters, visibleStackCharacters]
+    )
+    // 검색어나 폴더를 바꿔 보이지 않게 된 카드는 선택에서 뺀다: 안 보이는 것을 지우지 않는다.
+    useEffect(() => {
+        setSelectedCharacterIds(previous => {
+            const next = pruneSelection(previous, selectableIds)
+            return next.size === previous.size ? previous : next
+        })
+    }, [selectableIds])
+    const bulkDeleteIds = useMemo(
+        () => expandSelectionToStacks(characters, selectedCharacterIds, getStackKey),
+        [characters, selectedCharacterIds]
+    )
+    const exitSelectMode = () => {
+        setSelectMode(false)
+        setSelectedCharacterIds(new Set())
+    }
+    const toggleCharacterSelected = (id: string) => {
+        setSelectedCharacterIds(previous => {
+            const next = new Set(previous)
+            if (next.has(id)) next.delete(id)
+            else next.add(id)
+            return next
+        })
+    }
+    const handleBulkDelete = () => {
+        const count = selectedCharacterIds.size
+        removeCharacters(bulkDeleteIds)
+        if (expandedId && bulkDeleteIds.includes(expandedId)) setExpandedId(null)
+        exitSelectMode()
+        toast({ title: t('characterPanel.bulkDeleted', '캐릭터 {{count}}개를 삭제했어요', { count }), variant: 'success' })
+    }
+
+    const renderCharacterCard = (char: CharacterPrompt) => {
+        const card = renderCharacterCardBody(char)
+        if (!selectMode) return card
+        const checked = selectedCharacterIds.has(char.id)
+        return (
+            <div key={char.id} className="flex items-start gap-2">
+                <label className="flex h-10 shrink-0 cursor-pointer items-center pl-1">
+                    <input
+                        type="checkbox"
+                        checked={checked}
+                        onChange={() => toggleCharacterSelected(char.id)}
+                        aria-label={t('characterPanel.selectCharacter', '{{name}} 선택', { name: char.name || t('characterPanel.unnamed', '이름 없음') })}
+                        className="h-4 w-4 accent-primary"
+                    />
+                </label>
+                <div className={cn("min-w-0 flex-1 rounded-lg", checked && "ring-1 ring-primary/60")}>{card}</div>
+            </div>
+        )
+    }
+
+    const renderCharacterCardBody = (char: CharacterPrompt) => {
+        const index = characterIndexById.get(char.id) ?? 0
+        return (
+            <SortableCharacterCard
+                key={char.id}
+                character={char}
+                index={index}
+                isExpanded={expandedId === char.id}
+                onToggleExpand={() => handleToggleExpand(char.id)}
+                onUpdate={(data) => updateCharacter(char.id, data)}
+                updateCharacterDirect={updateCharacter}
+                onRemove={() => removeCharacter(char.id)}
+                onToggleEnabled={() => toggleEnabled(char.id)}
+                onDuplicate={() => handleDuplicate(char)}
+                onSaveAsPreset={() => handleSaveAsPreset(char)}
+                onMoveToGroup={moveCharacterToGroup}
+                positionEnabled={positionEnabled}
+                groups={groups}
+                allCharacters={characters}
+                expertCharacterPromptLayoutEnabled={expertCharacterPromptLayoutEnabled}
+                onAddVariant={() => handleAddVariant(char)}
+                expertCharacterPromptVariantsEnabled={expertCharacterPromptVariantsEnabled}
+                expertCharacterPromptGenderIndicatorEnabled={expertCharacterPromptGenderIndicatorEnabled}
+                characterPromptGenderIndicatorMode={characterPromptGenderIndicatorMode}
+                onSelectVariant={activateVariant}
+                onReorderVariants={handleReorderVariants}
+            />
+        )
+    }
+
+    const renderFolderColorMenu = (group: CharacterGroup) => (
+        <ContextMenuSub>
+            <ContextMenuSubTrigger>
+                <Palette className="mr-2 h-4 w-4" />
+                {t('characterPanel.changeFolderColor')}
+            </ContextMenuSubTrigger>
+            <ContextMenuSubContent className="w-auto min-w-0 p-2">
+                <div className="flex items-center gap-1.5">
+                    {FOLDER_COLORS.map((color, index) => (
+                        <ContextMenuItem
+                            key={color.name}
+                            aria-label={color.name}
+                            title={color.name}
+                            className={cn(
+                                "h-6 w-6 min-w-0 cursor-pointer rounded-full border-2 p-0 focus:ring-2 focus:ring-ring focus:ring-offset-2 focus:ring-offset-popover",
+                                (group.colorIndex ?? 0) === index
+                                    ? "border-foreground"
+                                    : "border-transparent"
+                            )}
+                            style={{ backgroundColor: color.swatch }}
+                            onSelect={() => updateGroup(group.id, { colorIndex: index })}
+                        />
+                    ))}
+                </div>
+            </ContextMenuSubContent>
+        </ContextMenuSub>
+    )
+
+    const renderFolderTree = (group: CharacterGroup, depth = 0): React.ReactNode => {
+        if (!shouldRenderGroup(group)) return null
+        const folderColor = FOLDER_COLORS[group.colorIndex ?? 0]
+        const children = groupChildren.get(group.id) || []
+        const visibleChildren = children.filter(shouldRenderGroup)
+        const descendants = getCharacterGroupDescendantIds(groups, group.id)
+        const moveTargets = groups.filter(target => !descendants.has(target.id))
+
+        return (
+            <div key={group.id}>
+                <DroppableFolder
+                    folderId={group.id}
+                    isActive={activeId !== null}
+                    isCollapsed={group.collapsed}
+                    colorClass={folderColor.bg}
+                    disabled={editingGroupId === group.id}
+                >
+                <ContextMenu>
+                    <ContextMenuTrigger asChild>
+                        <div
+                            className={cn(
+                                "group/folder flex h-8 cursor-pointer items-center gap-1 rounded-md pr-1 text-xs transition-colors",
+                                selectedGroupId === group.id
+                                    ? "bg-primary/15 text-foreground"
+                                    : "text-muted-foreground hover:bg-muted/70 hover:text-foreground"
+                            )}
+                            style={{ paddingLeft: `${4 + depth * 12}px` }}
+                            onClick={() => setSelectedGroupId(group.id)}
+                        >
+                            <button
+                                type="button"
+                                className="flex h-6 w-5 shrink-0 items-center justify-center"
+                                onClick={(event) => {
+                                    event.stopPropagation()
+                                    if (visibleChildren.length > 0) toggleGroupCollapsed(group.id)
+                                }}
+                            >
+                            {visibleChildren.length > 0 && (group.collapsed
+                                    ? <ChevronRight className="h-3.5 w-3.5" />
+                                    : <ChevronDown className="h-3.5 w-3.5" />
+                                )}
+                            </button>
+                            {group.collapsed
+                                ? <Folder className={cn("h-4 w-4 shrink-0", folderColor.icon)} />
+                                : <FolderOpen className={cn("h-4 w-4 shrink-0", folderColor.icon)} />
+                            }
+                            {editingGroupId === group.id ? (
+                                <Input
+                                    ref={editingGroupInputRef}
+                                    autoFocus
+                                    value={editingGroupName}
+                                    onChange={(event) => setEditingGroupName(event.target.value)}
+                                    onBlur={() => handleSaveGroupName(group.id)}
+                                    onKeyDown={(event) => {
+                                        if (event.key === 'Enter') handleSaveGroupName(group.id)
+                                        if (event.key === 'Escape') {
+                                            setEditingGroupId(null)
+                                            setEditingGroupName('')
+                                        }
+                                    }}
+                                    onClick={(event) => event.stopPropagation()}
+                                    onPointerDown={(event) => event.stopPropagation()}
+                                    className="h-6 min-w-0 flex-1 px-1 text-xs"
+                                />
+                            ) : (
+                                <span className="min-w-0 flex-1 truncate">{group.name}</span>
+                            )}
+                            <span className="shrink-0 text-[10px] opacity-50">
+                                {groupCharacterCounts.get(group.id) || 0}
+                            </span>
+                        </div>
+                    </ContextMenuTrigger>
+                    <ContextMenuContent className="w-56">
+                        <ContextMenuItem onClick={() => {
+                            setEditingGroupId(group.id)
+                            setEditingGroupName(group.name)
+                        }}>
+                            <Pencil className="mr-2 h-4 w-4" />
+                            {t('characterPanel.rename', '이름 변경')}
+                        </ContextMenuItem>
+                        <ContextMenuItem onClick={() => toggleGroupEnabled(group.id)}>
+                            <Eye className="mr-2 h-4 w-4" />
+                            {t('characterPanel.toggleAll', '폴더 내 전체 활성화/비활성화')}
+                        </ContextMenuItem>
+                        {renderFolderColorMenu(group)}
+                        <ContextMenuItem onClick={() => handleCreateGroup(group.id)}>
+                            <FolderPlus className="mr-2 h-4 w-4" />
+                            {t('characterPanel.addSubfolder', '하위 폴더 추가')}
+                        </ContextMenuItem>
+                        <ContextMenuSub>
+                            <ContextMenuSubTrigger>
+                                <Folder className="mr-2 h-4 w-4" />
+                                {t('characterPanel.moveFolder', '폴더 이동')}
+                            </ContextMenuSubTrigger>
+                            <ContextMenuSubContent className="max-h-72 overflow-y-auto">
+                                <ContextMenuItem
+                                    disabled={!group.parentId}
+                                    onClick={() => moveGroup(group.id, undefined)}
+                                >
+                                    {t('characterPanel.moveToRoot', '최상위로 이동')}
+                                </ContextMenuItem>
+                                {moveTargets.map(target => (
+                                    <ContextMenuItem
+                                        key={target.id}
+                                        disabled={group.parentId === target.id}
+                                        onClick={() => moveGroup(group.id, target.id)}
+                                    >
+                                        <span className="max-w-48 truncate">{getCharacterGroupPath(groups, target.id)}</span>
+                                    </ContextMenuItem>
+                                ))}
+                            </ContextMenuSubContent>
+                        </ContextMenuSub>
+                        <ContextMenuSeparator />
+                        <ContextMenuItem
+                            className="text-destructive focus:text-destructive"
+                            onClick={() => handleDeleteGroup(group.id)}
+                        >
+                            <Trash2 className="mr-2 h-4 w-4" />
+                            {t('common.delete', '삭제')}
+                        </ContextMenuItem>
+                    </ContextMenuContent>
+                </ContextMenu>
+                </DroppableFolder>
+                {!group.collapsed && visibleChildren.length > 0 && (
+                    <SortableContext
+                        items={visibleChildren.map(child => `folder-${child.id}`)}
+                        strategy={verticalListSortingStrategy}
+                    >
+                        {visibleChildren.map(child => renderFolderTree(child, depth + 1))}
+                    </SortableContext>
+                )}
+            </div>
+        )
+    }
+
+    const renderLegacyFolder = (group: CharacterGroup, depth = 0): React.ReactNode => {
+        if (!shouldRenderGroup(group)) return null
+        const folderColor = FOLDER_COLORS[group.colorIndex ?? 0]
+        const children = groupChildren.get(group.id) || []
+        const visibleChildren = children.filter(shouldRenderGroup)
+        const folderCharacters = visibleStackCharacters.filter(character => character.groupId === group.id && characterMatchesSearch(character))
+        const descendants = getCharacterGroupDescendantIds(groups, group.id)
+        const moveTargets = groups.filter(target => !descendants.has(target.id))
+
+        return (
+            <div key={group.id} className={depth > 0 ? "ml-3" : undefined}>
+                <DroppableFolder
+                    folderId={group.id}
+                    isActive={activeId !== null}
+                    isCollapsed={group.collapsed}
+                    colorClass={folderColor.bg}
+                    disabled={editingGroupId === group.id}
+                >
+                    <ContextMenu>
+                        <ContextMenuTrigger asChild>
+                            <div className="group/folder flex cursor-pointer items-center gap-2 rounded-lg bg-muted/40 px-2 py-1.5">
+                                <button
+                                    type="button"
+                                    className="flex min-w-0 flex-1 items-center gap-2 text-left text-sm font-medium text-muted-foreground transition-colors hover:text-foreground"
+                                    onClick={() => toggleGroupCollapsed(group.id)}
+                                >
+                                    {group.collapsed
+                                        ? <ChevronRight className="h-4 w-4 shrink-0" />
+                                        : <ChevronDown className="h-4 w-4 shrink-0" />
+                                    }
+                                    {group.collapsed
+                                        ? <Folder className={cn("h-5 w-5 shrink-0", folderColor.icon)} />
+                                        : <FolderOpen className={cn("h-5 w-5 shrink-0", folderColor.icon)} />
+                                    }
+                                    {editingGroupId === group.id ? (
+                                        <Input
+                                            ref={editingGroupInputRef}
+                                            autoFocus
+                                            value={editingGroupName}
+                                            onChange={(event) => setEditingGroupName(event.target.value)}
+                                            onBlur={() => handleSaveGroupName(group.id)}
+                                            onKeyDown={(event) => {
+                                                if (event.key === 'Enter') handleSaveGroupName(group.id)
+                                                if (event.key === 'Escape') {
+                                                    setEditingGroupId(null)
+                                                    setEditingGroupName('')
+                                                }
+                                            }}
+                                            onClick={(event) => event.stopPropagation()}
+                                            onPointerDown={(event) => event.stopPropagation()}
+                                            className="h-6 min-w-0 flex-1 px-1.5 py-0 text-sm"
+                                        />
+                                    ) : (
+                                        <span className="min-w-0 flex-1 truncate">{group.name}</span>
+                                    )}
+                                    <span className="shrink-0 text-xs opacity-50">({folderCharacters.length})</span>
+                                </button>
+                                <div className="flex gap-1 opacity-0 transition-opacity group-hover/folder:opacity-100">
+                                    <Button
+                                        size="icon"
+                                        variant="ghost"
+                                        className="h-7 w-7"
+                                        onClick={() => handleCreateGroup(group.id)}
+                                    >
+                                        <FolderPlus className="h-4 w-4" />
+                                    </Button>
+                                    <Button
+                                        size="icon"
+                                        variant="ghost"
+                                        className="h-7 w-7"
+                                        onClick={() => toggleGroupEnabled(group.id)}
+                                    >
+                                        <Eye className="h-4 w-4" />
+                                    </Button>
+                                    <Button
+                                        size="icon"
+                                        variant="ghost"
+                                        className="h-7 w-7"
+                                        onClick={() => {
+                                            setEditingGroupId(group.id)
+                                            setEditingGroupName(group.name)
+                                        }}
+                                    >
+                                        <Pencil className="h-4 w-4" />
+                                    </Button>
+                                    <Button
+                                        size="icon"
+                                        variant="ghost"
+                                        className="h-7 w-7 text-destructive hover:text-destructive"
+                                        onClick={() => handleDeleteGroup(group.id)}
+                                    >
+                                        <Trash2 className="h-4 w-4" />
+                                    </Button>
+                                </div>
+                            </div>
+                        </ContextMenuTrigger>
+                        <ContextMenuContent className="w-56">
+                            <ContextMenuItem onClick={() => {
+                                setEditingGroupId(group.id)
+                                setEditingGroupName(group.name)
+                            }}>
+                                <Pencil className="mr-2 h-4 w-4" />
+                                {t('characterPanel.rename', '이름 변경')}
+                            </ContextMenuItem>
+                            {renderFolderColorMenu(group)}
+                            <ContextMenuItem onClick={() => handleCreateGroup(group.id)}>
+                                <FolderPlus className="mr-2 h-4 w-4" />
+                                {t('characterPanel.addSubfolder', '하위 폴더 추가')}
+                            </ContextMenuItem>
+                            <ContextMenuSub>
+                                <ContextMenuSubTrigger>
+                                    <Folder className="mr-2 h-4 w-4" />
+                                    {t('characterPanel.moveFolder', '폴더 이동')}
+                                </ContextMenuSubTrigger>
+                                <ContextMenuSubContent className="max-h-72 overflow-y-auto">
+                                    <ContextMenuItem
+                                        disabled={!group.parentId}
+                                        onClick={() => moveGroup(group.id, undefined)}
+                                    >
+                                        {t('characterPanel.moveToRoot', '최상위로 이동')}
+                                    </ContextMenuItem>
+                                    {moveTargets.map(target => (
+                                        <ContextMenuItem
+                                            key={target.id}
+                                            disabled={group.parentId === target.id}
+                                            onClick={() => moveGroup(group.id, target.id)}
+                                        >
+                                            <span className="max-w-48 truncate">{getCharacterGroupPath(groups, target.id)}</span>
+                                        </ContextMenuItem>
+                                    ))}
+                                </ContextMenuSubContent>
+                            </ContextMenuSub>
+                        </ContextMenuContent>
+                    </ContextMenu>
+                </DroppableFolder>
+                {!group.collapsed && (
+                    <div className={cn("ml-2 min-h-8 space-y-1.5 border-l-2 pb-2 pl-2 pt-1", folderColor.border)}>
+                        {visibleChildren.length > 0 && (
+                            <SortableContext
+                                items={visibleChildren.map(child => `folder-${child.id}`)}
+                                strategy={verticalListSortingStrategy}
+                            >
+                                {visibleChildren.map(child => renderLegacyFolder(child, depth + 1))}
+                            </SortableContext>
+                        )}
+                        <SortableContext
+                            items={folderCharacters.map(character => character.id)}
+                            strategy={verticalListSortingStrategy}
+                        >
+                            <div className="min-w-0 space-y-1.5">
+                                {folderCharacters.map(renderCharacterCard)}
+                            </div>
+                        </SortableContext>
+                    </div>
+                )}
+            </div>
+        )
+    }
+
+    if (!open) return null
+
+    return (
+        <>
+            {/* 패널 - absolute로 프롬프트 영역 위에 오버레이 */}
+            <div
+                className={cn(
+                    "absolute inset-0 z-10 min-w-0 overflow-hidden flex flex-col bg-muted/95 backdrop-blur-sm rounded-xl border border-border/50",
+                    "animate-in slide-in-from-bottom-4 duration-200"
+                )}
+            >
+                {/* Header */}
+                <div className="relative flex min-w-0 items-center overflow-hidden px-3 py-2 bg-muted/50 border-b border-border/30 shrink-0">
+                    <div className={cn(
+                        "flex min-w-0 flex-1 items-center gap-2 overflow-hidden text-sm font-medium",
+                        positionEnabled ? "pr-[192px]" : "pr-[160px]"
+                    )}>
+                        <Users className="h-4 w-4 shrink-0 text-primary" />
+                        <span className="min-w-0 flex-1 truncate">{t('characterPanel.title', '캐릭터 프롬프트')}</span>
+                        {enabledCharacterCount > 0 && (
+                            <span className="shrink-0 text-xs text-muted-foreground">
+                                ({enabledCharacterCount}/{activeCharacterLimit})
+                            </span>
+                        )}
+                    </div>
+                    <div className="absolute right-3 top-1/2 z-10 flex shrink-0 -translate-y-1/2 items-center gap-1 bg-muted/50">
+                        {/* 위치 설정 다이얼로그 (활성화 시에만) - 왼쪽에 배치 */}
+                        {positionEnabled && (
+                            <Tip content={t('characterPanel.positionTitle', '이미지 내 캐릭터 위치 지정')}>
+                                <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    className="h-7 w-7"
+                                    onClick={() => setPositionDialogOpen(true)}
+                                >
+                                    <SlidersHorizontal className="h-3.5 w-3.5" />
+                                </Button>
+                            </Tip>
+                        )}
+                        <Tip content={t('characterPanel.disableAll', 'Disable all characters')}>
+                            <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-7 w-7"
+                                onClick={disableAll}
+                                disabled={enabledCharacterCount === 0}
+                            >
+                                <EyeOff className="h-3.5 w-3.5" />
+                            </Button>
+                        </Tip>
+                        {/* 위치 활성화 토글 */}
+                        <Tip content={t('characterPanel.positionDesc', '캐릭터 위치 기능 활성화')}>
+                            <Button
+                                variant={positionEnabled ? "default" : "ghost"}
+                                size="icon"
+                                className={cn(
+                                    "h-7 w-7",
+                                    positionEnabled && "bg-primary text-primary-foreground"
+                                )}
+                                onClick={() => setPositionEnabled(!positionEnabled)}
+                            >
+                                <MapPin className="h-3.5 w-3.5" />
+                            </Button>
+                        </Tip>
+                        <Tip content={t('characterPanel.addDesc', '새 캐릭터 프롬프트 추가')}>
+                            <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-7 w-7"
+                                onClick={handleAddCharacter}
+                            >
+                                <Plus className="h-3.5 w-3.5" />
+                            </Button>
+                        </Tip>
+                        <Tip content={t('characterPanel.addFolderDesc', '캐릭터 폴더 생성')}>
+                            <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-7 w-7"
+                                onClick={() => handleCreateGroup()}
+                            >
+                                <FolderPlus className="h-3.5 w-3.5" />
+                            </Button>
+                        </Tip>
+                        <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-7 w-7 hover:bg-destructive/20 hover:text-destructive"
+                            onClick={() => onOpenChange(false)}
+                        >
+                            <X className="h-4 w-4" />
+                        </Button>
+                    </div>
+                </div>
+
+                {enabledCharacters.length > 0 && (
+                    <div className="shrink-0 space-y-1.5 border-b border-border/30 bg-background/25 px-3 py-2">
+                        <div className="flex items-center justify-between gap-2 text-xs text-muted-foreground">
+                            <div className="flex items-center gap-1.5 font-medium">
+                                <Eye className="h-3.5 w-3.5 text-primary" />
+                                <span>{t('characterPanel.activeCharacters', 'Active characters')}</span>
+                            </div>
+                            <span>{enabledCharacterCount}/{activeCharacterLimit}</span>
+                        </div>
+                        <div className="flex max-h-[88px] flex-wrap gap-1.5 overflow-y-auto pr-1">
+                            {enabledCharacters.map((character) => {
+                                const index = characterIndexById.get(character.id) ?? 0
+                                const displayName = getVariantBaseName(
+                                    character,
+                                    character.prompt
+                                        ? character.prompt.split(',')[0].trim().substring(0, 30)
+                                        : t('characterPanel.unnamed', 'Character')
+                                )
+                                const groupName = character.groupId && groupById.has(character.groupId)
+                                    ? getCharacterGroupPath(groups, character.groupId)
+                                    : undefined
+
+                                return (
+                                    <button
+                                        key={character.id}
+                                        type="button"
+                                        className="flex min-w-0 basis-[140px] flex-1 items-center gap-2 rounded-md border border-border/50 bg-muted/30 px-2 py-1.5 text-left transition-colors hover:border-primary/40 hover:bg-muted/70"
+                                        title={groupName ? `${displayName} / ${groupName}` : displayName}
+                                        onClick={() => handleFocusCharacter(character)}
+                                    >
+                                        <span
+                                            className="h-2 w-2 shrink-0 rounded-full"
+                                            style={{ backgroundColor: CHARACTER_COLORS[index % CHARACTER_COLORS.length] }}
+                                        />
+                                        <span className="min-w-0 flex-1 truncate text-xs font-medium">{displayName}</span>
+                                        {groupName && (
+                                            <span className="max-w-[72px] truncate text-[10px] text-muted-foreground">{groupName}</span>
+                                        )}
+                                    </button>
+                                )
+                            })}
+                        </div>
+                    </div>
+                )}
+
+                {/* Search */}
+                <div className="flex shrink-0 items-center gap-1.5 border-b border-border/30 px-3 py-2">
+                    {expertCharacterPromptFolderBrowserEnabled && (
+                        <Tip content={t('characterPanel.toggleFolders', '폴더 패널 열기/닫기')}>
+                            <Button
+                                type="button"
+                                variant={folderPanelOpen ? "secondary" : "ghost"}
+                                size="icon"
+                                className="h-8 w-8 shrink-0"
+                                onClick={() => setFolderPanelOpen(open => !open)}
+                            >
+                                <Menu className="h-4 w-4" />
+                            </Button>
+                        </Tip>
+                    )}
+                    <div className="relative min-w-0 flex-1">
+                        <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+                        <Input
+                            value={searchQuery}
+                            onChange={(e) => setSearchQuery(e.target.value)}
+                            placeholder={t('characterPanel.search', '캐릭터 검색...')}
+                            className="h-8 pl-8 text-sm"
+                        />
+                    </div>
+                    <Tip content={t('characterPanel.selectMode', '여러 개 선택해서 삭제')}>
+                        <Button
+                            type="button"
+                            variant={selectMode ? 'secondary' : 'ghost'}
+                            size="icon"
+                            className="h-8 w-8 shrink-0"
+                            aria-label={t('characterPanel.selectMode', '여러 개 선택해서 삭제')}
+                            aria-pressed={selectMode}
+                            onClick={() => (selectMode ? exitSelectMode() : setSelectMode(true))}
+                        >
+                            <ListChecks className="h-4 w-4" />
+                        </Button>
+                    </Tip>
+                    {expertCharacterPromptGenderIndicatorEnabled && (
+                        <Popover>
+                            <PopoverTrigger asChild>
+                                <Button
+                                    type="button"
+                                    variant={genderFilter === 'all' ? 'ghost' : 'secondary'}
+                                    size="icon"
+                                    className="h-8 w-8 shrink-0"
+                                    aria-label={t('characterPanel.genderFilter')}
+                                >
+                                    <SlidersHorizontal className="h-4 w-4" />
+                                </Button>
+                            </PopoverTrigger>
+                            <PopoverContent align="end" className="w-auto p-2">
+                                <div className="flex items-center gap-1.5">
+                                    <Button type="button" variant="ghost" size="icon" className={cn("h-8 w-8 rounded-full", genderFilter === 'all' && "bg-muted text-foreground")} onClick={() => setGenderFilter('all')} aria-label={t('characterPanel.genderFilterAll')}>
+                                        <Users className="h-4 w-4" />
+                                    </Button>
+                                    <Button type="button" variant="ghost" size="icon" className={cn("h-8 w-8 rounded-full text-blue-400", genderFilter === 'male' && "bg-blue-500/15 ring-1 ring-blue-400/60")} onClick={() => setGenderFilter('male')} aria-label={t('characterPanel.genderFilterMale')}>
+                                        <span aria-hidden="true" className="text-lg font-semibold leading-none">♂</span>
+                                    </Button>
+                                    <Button type="button" variant="ghost" size="icon" className={cn("h-8 w-8 rounded-full text-pink-400", genderFilter === 'female' && "bg-pink-500/15 ring-1 ring-pink-400/60")} onClick={() => setGenderFilter('female')} aria-label={t('characterPanel.genderFilterFemale')}>
+                                        <span aria-hidden="true" className="text-lg font-semibold leading-none">♀</span>
+                                    </Button>
+                                    <Button type="button" variant="ghost" size="icon" className={cn("h-8 w-8 rounded-full text-muted-foreground", genderFilter === 'unknown' && "bg-muted ring-1 ring-muted-foreground/60")} onClick={() => setGenderFilter('unknown')} aria-label={t('characterPanel.genderFilterOther')}>
+                                        <User className="h-4 w-4" />
+                                    </Button>
+                                </div>
+                            </PopoverContent>
+                        </Popover>
+                    )}
+                </div>
+
+                {selectMode && (
+                    <div className="flex shrink-0 items-center gap-2 border-b border-border/30 bg-muted/30 px-3 py-1.5 text-xs">
+                        <span className="font-medium tabular-nums">
+                            {t('characterPanel.selectedCount', '{{count}}개 선택', { count: selectedCharacterIds.size })}
+                        </span>
+                        <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            className="h-7 px-2 text-xs"
+                            disabled={selectableIds.length === 0}
+                            onClick={() => setSelectedCharacterIds(previous => toggleSelectAll(previous, selectableIds))}
+                        >
+                            {selectableIds.length > 0 && selectableIds.every(id => selectedCharacterIds.has(id))
+                                ? t('characterPanel.deselectAll', '전체 해제')
+                                : t('characterPanel.selectAll', '전체 선택')}
+                        </Button>
+                        <div className="ml-auto flex items-center gap-1.5">
+                            <Button type="button" variant="ghost" size="sm" className="h-7 px-2 text-xs" onClick={exitSelectMode}>
+                                {t('common.cancel', '취소')}
+                            </Button>
+                            <Button
+                                type="button"
+                                variant="destructive"
+                                size="sm"
+                                className="h-7 px-2 text-xs"
+                                disabled={selectedCharacterIds.size === 0}
+                                onClick={() => setBulkDeleteOpen(true)}
+                            >
+                                <Trash2 className="mr-1 h-3.5 w-3.5" />
+                                {t('characterPanel.deleteSelected', '선택 삭제')}
+                            </Button>
+                        </div>
+                    </div>
+                )}
+                <ConfirmDialog
+                    open={bulkDeleteOpen}
+                    onOpenChange={setBulkDeleteOpen}
+                    variant="destructive"
+                    title={t('characterPanel.bulkDeleteTitle', '캐릭터 {{count}}개를 삭제할까요?', { count: selectedCharacterIds.size })}
+                    description={bulkDeleteIds.length > selectedCharacterIds.size
+                        ? t('characterPanel.bulkDeleteWithVariants', '변형까지 모두 {{total}}개가 지워져요. 되돌릴 수 없어요.', { total: bulkDeleteIds.length })
+                        : t('characterPanel.bulkDeleteDescription', '되돌릴 수 없어요.')}
+                    confirmText={t('common.delete', '삭제')}
+                    cancelText={t('common.cancel', '취소')}
+                    onConfirm={handleBulkDelete}
+                />
+
+                <DndContext
+                    sensors={sensors}
+                    collisionDetection={closestCenter}
+                    autoScroll={false}
+                    onDragStart={handleDragStart}
+                    onDragEnd={handleDragEnd}
+                >
+                    {expertCharacterPromptFolderBrowserEnabled ? (
+                    <div className="flex min-h-0 flex-1">
+                        {folderPanelOpen && (
+                        <>
+                        <div
+                            ref={folderPanelRef}
+                            className="flex min-w-[120px] shrink-0 flex-col bg-background/20"
+                            style={{ width: folderPanelWidth, maxWidth: 'calc(100% - 180px)' }}
+                        >
+                            <div className="flex h-8 shrink-0 items-center justify-between border-b border-border/20 px-2 text-[11px] font-medium text-muted-foreground">
+                                <span>{t('characterPanel.folders', '폴더')}</span>
+                                <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    className="h-6 w-6"
+                                    onClick={() => handleCreateGroup()}
+                                >
+                                    <FolderPlus className="h-3.5 w-3.5" />
+                                </Button>
+                            </div>
+                            <ScrollArea className="min-h-0 flex-1">
+                                <div className="space-y-0.5 p-1.5">
+                                    <DroppableUngrouped isActive={activeId !== null}>
+                                        <button
+                                            type="button"
+                                            className={cn(
+                                                "flex h-8 w-full items-center gap-2 rounded-md px-2 text-left text-xs transition-colors",
+                                                !selectedGroupId
+                                                    ? "bg-primary/15 text-foreground"
+                                                    : "text-muted-foreground hover:bg-muted/70 hover:text-foreground"
+                                            )}
+                                            onClick={() => setSelectedGroupId(null)}
+                                        >
+                                            <Users className="h-4 w-4 shrink-0" />
+                                            <span className="min-w-0 flex-1 truncate">{t('characterPanel.ungrouped', '미분류')}</span>
+                                            <span className="text-[10px] opacity-50">{ungroupedCount}</span>
+                                        </button>
+                                    </DroppableUngrouped>
+                                    <SortableContext
+                                        items={visibleRootGroups.map(group => `folder-${group.id}`)}
+                                        strategy={verticalListSortingStrategy}
+                                    >
+                                        {visibleRootGroups.map(group => renderFolderTree(group))}
+                                    </SortableContext>
+                                </div>
+                            </ScrollArea>
+                        </div>
+                        <div
+                            role="separator"
+                            aria-orientation="vertical"
+                            className="w-1.5 shrink-0 cursor-col-resize border-l border-border/30 transition-colors hover:bg-primary/25"
+                            onMouseDown={startFolderPanelResize}
+                        />
+                        </>
+                        )}
+
+                        <div className="flex min-w-0 flex-1 flex-col">
+                            <div className="flex h-8 shrink-0 items-center justify-between gap-2 border-b border-border/20 px-2">
+                                <div className="flex min-w-0 items-center gap-1.5 text-xs font-medium">
+                                    {normalizedSearch
+                                        ? <Search className="h-3.5 w-3.5 shrink-0 text-primary" />
+                                        : selectedGroup
+                                            ? <FolderOpen className={cn("h-3.5 w-3.5 shrink-0", FOLDER_COLORS[selectedGroup.colorIndex ?? 0].icon)} />
+                                            : <Users className="h-3.5 w-3.5 shrink-0" />
+                                    }
+                                    <span className="truncate">
+                                        {normalizedSearch
+                                            ? t('characterPanel.searchResults', '검색 결과')
+                                            : selectedGroup
+                                                ? getCharacterGroupPath(groups, selectedGroup.id)
+                                                : t('characterPanel.ungrouped', '미분류')
+                                        }
+                                    </span>
+                                    <span className="shrink-0 text-[10px] text-muted-foreground">{visibleCharacters.length}</span>
+                                </div>
+                                <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    className="h-6 w-6 shrink-0"
+                                    onClick={handleAddCharacter}
+                                >
+                                    <Plus className="h-3.5 w-3.5" />
+                                </Button>
+                            </div>
+                            <ScrollArea className="min-h-0 flex-1">
+                                <SortableContext
+                                    items={visibleCharacters.map(character => character.id)}
+                                    strategy={verticalListSortingStrategy}
+                                >
+                                    <div className="min-w-0 space-y-1.5 p-2">
+                                        {visibleCharacters.map(renderCharacterCard)}
+                                        {visibleCharacters.length === 0 && (
+                                            <div className="flex min-h-40 items-center justify-center py-8 text-center text-sm text-muted-foreground">
+                                                <div>
+                                                    {normalizedSearch
+                                                        ? <Search className="mx-auto mb-2 h-7 w-7 opacity-30" />
+                                                        : <Users className="mx-auto mb-2 h-7 w-7 opacity-30" />
+                                                    }
+                                                    <p>
+                                                        {normalizedSearch
+                                                            ? t('characterPanel.noResults', '검색 결과가 없습니다')
+                                                            : t('characterPanel.emptyFolder', '빈 폴더')
+                                                        }
+                                                    </p>
+                                                    {!normalizedSearch && (
+                                                        <Button
+                                                            variant="outline"
+                                                            size="sm"
+                                                            className="mt-2"
+                                                            onClick={handleAddCharacter}
+                                                        >
+                                                            <Plus className="mr-1 h-3.5 w-3.5" />
+                                                            {t('characterPanel.addFirst', '첫 캐릭터 추가')}
+                                                        </Button>
+                                                    )}
+                                                </div>
+                                            </div>
+                                        )}
+                                    </div>
+                                </SortableContext>
+                            </ScrollArea>
+                        </div>
+                    </div>
+                    ) : (
+                        <ScrollArea className="min-h-0 flex-1">
+                            <div className="flex min-w-0 flex-col gap-2 p-3">
+                                {characters.length === 0 ? (
+                                    <div className="flex min-h-48 items-center justify-center py-12 text-center text-sm text-muted-foreground">
+                                        <div>
+                                            <Users className="mx-auto mb-2 h-8 w-8 opacity-30" />
+                                            <p>{t('characterPanel.empty', '캐릭터가 없습니다')}</p>
+                                            <Button
+                                                variant="outline"
+                                                size="sm"
+                                                className="mt-2"
+                                                onClick={handleAddCharacter}
+                                            >
+                                                <Plus className="mr-1 h-3.5 w-3.5" />
+                                                {t('characterPanel.addFirst', '첫 캐릭터 추가')}
+                                            </Button>
+                                        </div>
+                                    </div>
+                                ) : (
+                                    <>
+                                        <SortableContext
+                                            items={visibleRootGroups.map(group => `folder-${group.id}`)}
+                                            strategy={verticalListSortingStrategy}
+                                        >
+                                            {visibleRootGroups.map(group => renderLegacyFolder(group))}
+                                        </SortableContext>
+                                        <DroppableUngrouped isActive={activeId !== null}>
+                                            <SortableContext
+                                                items={legacyUngroupedCharacters.map(character => character.id)}
+                                                strategy={verticalListSortingStrategy}
+                                            >
+                                                <div className="min-w-0 space-y-1.5">
+                                                    {groups.length > 0 && (
+                                                        <div className="flex items-center gap-2 px-2 py-1 text-sm font-medium text-muted-foreground">
+                                                            <Users className="h-4 w-4" />
+                                                            {t('characterPanel.ungrouped', '미분류')}
+                                                            <span className="text-xs opacity-50">({legacyUngroupedCharacters.length})</span>
+                                                        </div>
+                                                    )}
+                                                    {legacyUngroupedCharacters.map(renderCharacterCard)}
+                                                </div>
+                                            </SortableContext>
+                                        </DroppableUngrouped>
+                                        {normalizedSearch
+                                            && getVisibleStackCharacters(characters.filter(characterMatchesSearch)).length === 0
+                                            && (
+                                                <div className="flex min-h-40 items-center justify-center py-8 text-center text-sm text-muted-foreground">
+                                                    <div>
+                                                        <Search className="mx-auto mb-2 h-8 w-8 opacity-30" />
+                                                        <p>{t('characterPanel.noResults', '검색 결과가 없습니다')}</p>
+                                                    </div>
+                                                </div>
+                                            )}
+                                    </>
+                                )}
+                            </div>
+                        </ScrollArea>
+                    )}
+                </DndContext>
+            </div>
+
+            <PositionOverlay
+                open={positionDialogOpen}
+                onOpenChange={setPositionDialogOpen}
+                characters={characters}
+                onPositionChange={setPosition}
+            />
+        </>
+    )
+}
+
+// --- DroppableFolder Component ---
+interface DroppableFolderProps {
+    folderId: string
+    isActive: boolean
+    isCollapsed: boolean
+    colorClass?: string
+    disabled?: boolean
+    children: React.ReactNode
+}
+
+function DroppableFolder({ folderId, isActive, isCollapsed, colorClass, disabled = false, children }: DroppableFolderProps) {
+    const {
+        attributes,
+        listeners,
+        setNodeRef,
+        transform,
+        transition,
+        isDragging,
+        isOver,
+    } = useSortable({
+        id: `folder-${folderId}`,
+        disabled,
+    })
+
+    const style = {
+        transform: CSS.Transform.toString(transform),
+        transition,
+        position: isDragging ? 'relative' as const : undefined,
+        zIndex: isDragging ? 20 : undefined,
+    }
+
+    return (
+        <div
+            ref={setNodeRef}
+            style={style}
+            {...attributes}
+            {...listeners}
+            className={cn(
+                "transition-[background-color,box-shadow,opacity] duration-200 rounded-lg",
+                isActive && isCollapsed && "ring-2 ring-dashed ring-current/30",
+                isOver && cn("ring-2 ring-current", colorClass),
+                isDragging && "opacity-60 shadow-lg"
+            )}
+        >
+            {children}
+        </div>
+    )
+}
+
+// --- DroppableUngrouped Component ---
+interface DroppableUngroupedProps {
+    isActive: boolean
+    children: React.ReactNode
+}
+
+function DroppableUngrouped({ isActive, children }: DroppableUngroupedProps) {
+    const { setNodeRef, isOver } = useDroppable({
+        id: 'ungrouped-zone',
+    })
+
+    return (
+        <div
+            ref={setNodeRef}
+            className={cn(
+                "transition-[background-color,box-shadow,opacity] duration-200 rounded-lg min-h-[40px]",
+                isActive && "ring-2 ring-dashed ring-primary/30",
+                isOver && "ring-2 ring-primary bg-primary/10"
+            )}
+        >
+            {children}
+        </div>
+    )
+}
+
+// --- SortableCharacterCard Wrapper ---
+function haveSameCharacterCardProps(previous: CharacterCardProps, next: CharacterCardProps) {
+    if (
+        previous.character !== next.character
+        || previous.index !== next.index
+        || previous.isExpanded !== next.isExpanded
+        || previous.positionEnabled !== next.positionEnabled
+        || previous.groups !== next.groups
+        || previous.expertCharacterPromptLayoutEnabled !== next.expertCharacterPromptLayoutEnabled
+        || previous.expertCharacterPromptVariantsEnabled !== next.expertCharacterPromptVariantsEnabled
+        || previous.expertCharacterPromptGenderIndicatorEnabled !== next.expertCharacterPromptGenderIndicatorEnabled
+        || previous.characterPromptGenderIndicatorMode !== next.characterPromptGenderIndicatorMode
+    ) return false
+
+    if (!next.expertCharacterPromptVariantsEnabled) return true
+
+    const stackKey = getStackKey(next.character)
+    const previousVariants = previous.allCharacters.filter(character => getStackKey(character) === stackKey)
+    const nextVariants = next.allCharacters.filter(character => getStackKey(character) === stackKey)
+    return previousVariants.length === nextVariants.length
+        && previousVariants.every((character, index) => character === nextVariants[index])
+}
+
+const SortableCharacterCard = memo(function SortableCharacterCard(props: CharacterCardProps) {
+    const {
+        attributes,
+        listeners,
+        setNodeRef,
+        transform,
+        transition,
+        isDragging,
+    } = useSortable({ id: props.character.id })
+
+    const style: React.CSSProperties = {
+        width: '100%',
+        minWidth: 0,
+        maxWidth: '100%',
+        contain: 'inline-size',
+        transform: CSS.Transform.toString(transform),
+        transition,
+        zIndex: isDragging ? 9999 : 'auto',
+        position: isDragging ? 'relative' : undefined,
+        opacity: isDragging ? 0.9 : 1,
+        boxShadow: isDragging ? '0 10px 40px rgba(0,0,0,0.3)' : undefined,
+    }
+
+    return (
+        <div 
+            ref={setNodeRef} 
+            style={style}
+            className="w-full min-w-0 max-w-full overflow-hidden"
+            {...attributes}
+        >
+            <CharacterCard {...props} dragHandleProps={listeners} />
+        </div>
+    )
+}, haveSameCharacterCardProps)
+
+// --- Character Card Component ---
+interface CharacterCardProps {
+    character: CharacterPrompt
+    index: number
+    isExpanded: boolean
+    onToggleExpand: () => void
+    onUpdate: (data: Partial<CharacterPrompt>) => void
+    updateCharacterDirect: (id: string, data: Partial<CharacterPrompt>) => void
+    onRemove: () => void
+    onToggleEnabled: () => void
+    onDuplicate: () => void
+    onSaveAsPreset: () => void
+    onMoveToGroup: (characterId: string, groupId: string | undefined) => void
+    positionEnabled: boolean
+    groups: CharacterGroup[]
+    allCharacters: CharacterPrompt[]
+    expertCharacterPromptLayoutEnabled: boolean
+    expertCharacterPromptVariantsEnabled: boolean
+    expertCharacterPromptGenderIndicatorEnabled: boolean
+    characterPromptGenderIndicatorMode: 'icon' | 'header'
+    onAddVariant: () => void
+    onSelectVariant: (id: string) => void
+    onReorderVariants: (activeId: string, overId: string) => void
+    dragHandleProps?: React.HTMLAttributes<HTMLElement>
+}
+
+function SortableVariantButton({
+    variant,
+    index,
+    selected,
+    onSelect,
+}: {
+    variant: CharacterPrompt
+    index: number
+    selected: boolean
+    onSelect: (id: string) => void
+}) {
+    const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
+        id: `variant-${variant.id}`,
+    })
+    const style: React.CSSProperties = {
+        transform: CSS.Transform.toString(transform),
+        transition,
+        opacity: isDragging ? 0.55 : 1,
+        zIndex: isDragging ? 20 : undefined,
+    }
+
+    return (
+        <Button
+            ref={setNodeRef}
+            type="button"
+            size="icon"
+            variant={selected ? 'default' : 'outline'}
+            className="h-8 w-8 shrink-0 cursor-grab rounded-md active:cursor-grabbing"
+            style={style}
+            onClick={() => onSelect(variant.id)}
+            {...attributes}
+            {...listeners}
+        >
+            {index + 1}
+        </Button>
+    )
+}
+
+function CharacterCard({
+    character,
+    index,
+    isExpanded,
+    onToggleExpand,
+    onUpdate,
+    updateCharacterDirect,
+    onRemove,
+    onToggleEnabled,
+    onDuplicate,
+    onSaveAsPreset,
+    onMoveToGroup,
+    positionEnabled,
+    groups,
+    allCharacters,
+    expertCharacterPromptLayoutEnabled,
+    expertCharacterPromptVariantsEnabled,
+    expertCharacterPromptGenderIndicatorEnabled,
+    characterPromptGenderIndicatorMode,
+    onAddVariant,
+    onSelectVariant,
+    onReorderVariants,
+    dragHandleProps,
+}: CharacterCardProps) {
+    const color = CHARACTER_COLORS[index % CHARACTER_COLORS.length]
+    const { t } = useTranslation()
+    const promptFontSize = useSettingsStore(state => state.promptFontSize)
+
+    // 로컬 상태로 입력값 관리 (렉 방지)
+    const [renameDialogOpen, setRenameDialogOpen] = useState(false)
+    const [newName, setNewName] = useState(character.name || '')
+    const [activePromptTab, setActivePromptTab] = useState<'prompt' | 'negative'>('prompt')
+    const [primaryPromptCollapsed, setPrimaryPromptCollapsed] = useState(false)
+    const [secondaryPromptCollapsed, setSecondaryPromptCollapsed] = useState(false)
+    const { characterPrompt, costumePrompt } = splitCostumePrompt(character.prompt)
+    const promptEnabled = character.promptEnabled ?? true
+    const negativeEnabled = character.negativeEnabled ?? true
+    const costumeEnabled = character.costumeEnabled ?? true
+    const gender = expertCharacterPromptGenderIndicatorEnabled ? getCharacterGender(character.prompt) : 'unknown'
+    const isGenderIconMode = characterPromptGenderIndicatorMode === 'icon'
+    const isGenderHeaderMode = characterPromptGenderIndicatorMode === 'header'
+    const variants = expertCharacterPromptVariantsEnabled ? allCharacters
+        .filter(c => getStackKey(c) === getStackKey(character))
+        .sort((a, b) => getVariantIndex(a) - getVariantIndex(b)) : [character]
+    const variantSensors = useSensors(
+        useSensor(PointerSensor, {
+            activationConstraint: { distance: 6 },
+        })
+    )
+    const [variantNames, setVariantNames] = useState<Record<string, string>>({})
+
+    useEffect(() => {
+        if (!renameDialogOpen) return
+        setNewName(getVariantBaseName(character, ''))
+        setVariantNames(Object.fromEntries(variants.map(variant => [
+            variant.id,
+            getVariantBaseName(variant, variant.name || '')
+        ])))
+    }, [renameDialogOpen, character.id, variants.length])
+
+    const saveVariantNames = () => {
+        if (expertCharacterPromptVariantsEnabled && variants.length > 1) {
+            variants.forEach((variant) => {
+                const hash = getVariantHash(variant)
+                if (!hash) return
+                const nextName = (variantNames[variant.id] || '').trim()
+                updateCharacterDirect(variant.id, { name: getVariantName(nextName || getVariantBaseName(variant, 'Character'), getVariantIndex(variant), hash) })
+            })
+        } else {
+            const hash = getVariantHash(character)
+            onUpdate({ name: hash ? getVariantName(newName.trim() || getVariantBaseName(character, 'Character'), getVariantIndex(character), hash) : (newName.trim() || undefined) })
+        }
+        setRenameDialogOpen(false)
+    }
+
+    return (
+        <>
+            <ContextMenu>
+                <ContextMenuTrigger asChild>
+                    <div
+                        data-character-prompt-id={character.id}
+                        className={cn(
+                            "w-full min-w-0 max-w-full rounded-xl border border-border/50 bg-background/60 transition-[background-color,border-color,opacity] duration-200 overflow-hidden",
+                            !character.enabled && "opacity-50"
+                        )}
+                    >
+                        {/* Card Header - Drag Handle */}
+                        <div
+                            className={cn(
+                                "flex w-full min-w-0 max-w-full items-center gap-2.5 overflow-hidden px-3 py-2.5 cursor-grab transition-colors active:cursor-grabbing",
+                                isGenderHeaderMode && gender === 'male' && "bg-blue-500/15 hover:bg-blue-500/20",
+                                isGenderHeaderMode && gender === 'female' && "bg-pink-500/15 hover:bg-pink-500/20",
+                                (!isGenderHeaderMode || gender === 'unknown') && "bg-muted/30 hover:bg-muted/50",
+                            )}
+                            onClick={onToggleExpand}
+                            {...dragHandleProps}
+                        >
+                            {/* 캐릭터 아이콘 */}
+                            <div className={cn(
+                                "h-[30px] w-[30px] shrink-0 rounded-lg border border-transparent flex items-center justify-center",
+                                isGenderIconMode && gender === 'male' && "bg-blue-500/15 text-blue-400",
+                                isGenderIconMode && gender === 'female' && "bg-pink-500/15 text-pink-400",
+                                (!isGenderIconMode || gender === 'unknown') && "bg-primary/10 text-primary",
+                            )}>
+                                {isGenderIconMode && gender === 'male' ? <span aria-hidden="true" className="text-lg font-semibold leading-none">♂</span> : isGenderIconMode && gender === 'female' ? <span aria-hidden="true" className="text-lg font-semibold leading-none">♀</span> : <User className="h-4 w-4" />}
+                            </div>
+
+                            {/* 캐릭터 번호 뱃지 - 위치 활성화시 색상 표시 */}
+                            <div
+                                className={cn(
+                                    "h-[22px] w-[22px] rounded-md flex items-center justify-center text-[11px] font-semibold shrink-0 transition-colors",
+                                    positionEnabled
+                                        ? "text-white"
+                                        : "bg-muted-foreground/20 text-muted-foreground"
+                                )}
+                                style={positionEnabled ? { backgroundColor: color } : undefined}
+                            >
+                                {index + 1}
+                            </div>
+
+                            <span className="w-0 min-w-0 flex-1 truncate text-[14.5px] font-semibold">
+                                {getVariantBaseName(
+                                    character,
+                                    character.prompt
+                                        ? character.prompt.split(',')[0].trim().substring(0, 30)
+                                        : t('characterPanel.unnamed', '??? ' + (index + 1))
+                                )}
+                            </span>
+
+                            <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-[26px] w-[26px] shrink-0"
+                                onClick={(e) => {
+                                    e.stopPropagation()
+                                    onToggleEnabled()
+                                }}
+                            >
+                                {character.enabled ? (
+                                    <Eye className="h-4 w-4 text-primary" />
+                                ) : (
+                                    <EyeOff className="h-4 w-4 text-muted-foreground" />
+                                )}
+                            </Button>
+                            <div className="shrink-0">
+                                {isExpanded ? (
+                                    <ChevronUp className="h-4.5 w-4.5 text-muted-foreground" />
+                                ) : (
+                                    <ChevronDown className="h-4.5 w-4.5 text-muted-foreground" />
+                                )}
+                            </div>
+                        </div>
+
+                        {/* Expanded Content - 아래로 펼쳐짐 */}
+                        {isExpanded && (
+                            <div className="min-w-0 px-3 py-3 space-y-3 border-t border-border/30 bg-background/40 animate-in slide-in-from-top-2 duration-150">
+                                {expertCharacterPromptLayoutEnabled ? (
+                                    <div className="flex h-[332px] min-w-0 flex-col gap-3">
+                                        <div
+                                            className={cn(
+                                                "min-w-0 overflow-hidden flex flex-col transition-[height,flex-grow,flex-basis] duration-200",
+                                                primaryPromptCollapsed && "h-7 flex-none"
+                                            )}
+                                            style={primaryPromptCollapsed ? undefined : { flex: '150 1 0%' }}
+                                        >
+                                            <div className="flex items-center justify-between gap-2">
+                                                <div className="flex items-center gap-2 text-xs font-medium">
+                                                    <button
+                                                        type="button"
+                                                        className="flex h-6 w-5 shrink-0 items-center justify-center text-muted-foreground hover:text-foreground"
+                                                        onClick={() => setPrimaryPromptCollapsed(value => !value)}
+                                                    >
+                                                        {primaryPromptCollapsed ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronUp className="h-3.5 w-3.5" />}
+                                                    </button>
+                                                    <button
+                                                        className={cn("px-2 py-1 rounded-md", activePromptTab === 'prompt' ? "bg-primary/15 text-primary" : "text-muted-foreground hover:bg-muted")}
+                                                        onClick={() => setActivePromptTab('prompt')}
+                                                    >{t('characterPanel.prompt', 'Prompt')}</button>
+                                                    <button
+                                                        className={cn("px-2 py-1 rounded-md", activePromptTab === 'negative' ? "bg-destructive/15 text-destructive" : "text-muted-foreground hover:bg-muted")}
+                                                        onClick={() => setActivePromptTab('negative')}
+                                                    >{t('characterPanel.negative', 'Negative')}</button>
+                                                    <Tip content={t('characterPanel.commentHint', 'Use # followed by a space for comments. #target and #source are sent to NovelAI.') }>
+                                                        <CircleHelp className="h-3.5 w-3.5 text-muted-foreground" />
+                                                    </Tip>
+                                                </div>
+                                                <Button variant="ghost" size="icon" className="h-6 w-6 shrink-0" onClick={() => activePromptTab === 'prompt' ? onUpdate({ promptEnabled: !promptEnabled }) : onUpdate({ negativeEnabled: !negativeEnabled })}>
+                                                    {(activePromptTab === 'prompt' ? promptEnabled : negativeEnabled) ? <Eye className="h-3.5 w-3.5 text-primary" /> : <EyeOff className="h-3.5 w-3.5 text-muted-foreground" />}
+                                                </Button>
+                                            </div>
+                                            {!primaryPromptCollapsed && (activePromptTab === 'prompt' ? (
+                                                <AutocompleteTextarea
+                                                    value={characterPrompt}
+                                                    onChange={(e) => onUpdate({ prompt: joinCostumePrompt(e.target.value, costumePrompt) })}
+                                                    placeholder={t('characterPanel.promptPlaceholder')}
+                                                    className={cn("mt-1.5 flex-1 min-h-0 text-sm resize-none", !promptEnabled && "opacity-50")}
+                                                    style={{ fontSize: `${promptFontSize}px` }}
+                                                />
+                                            ) : (
+                                                <AutocompleteTextarea
+                                                    value={character.negative}
+                                                    onChange={(e) => onUpdate({ negative: e.target.value })}
+                                                    placeholder={t('characterPanel.negativePlaceholder')}
+                                                    className={cn("mt-1.5 flex-1 min-h-0 text-sm border-destructive/20 resize-none", !negativeEnabled && "opacity-50")}
+                                                    style={{ fontSize: `${promptFontSize}px` }}
+                                                />
+                                            ))}
+                                        </div>
+                                        <div
+                                            className={cn(
+                                                "min-w-0 overflow-hidden flex flex-col transition-[height,flex-grow,flex-basis] duration-200",
+                                                secondaryPromptCollapsed && "h-7 flex-none"
+                                            )}
+                                            style={secondaryPromptCollapsed ? undefined : { flex: '110 1 0%' }}
+                                        >
+                                            <div className="flex items-center justify-between gap-2">
+                                                <button
+                                                    type="button"
+                                                    className="flex h-6 items-center gap-1 text-xs font-medium text-muted-foreground hover:text-foreground"
+                                                    onClick={() => setSecondaryPromptCollapsed(value => !value)}
+                                                >
+                                                    {secondaryPromptCollapsed ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronUp className="h-3.5 w-3.5" />}
+                                                    <span className="whitespace-nowrap">{t('characterPanel.costume')}</span>
+                                                </button>
+                                                <Button variant="ghost" size="icon" className="h-6 w-6 shrink-0" onClick={() => onUpdate({ costumeEnabled: !costumeEnabled })}>
+                                                    {costumeEnabled ? <Eye className="h-3.5 w-3.5 text-primary" /> : <EyeOff className="h-3.5 w-3.5 text-muted-foreground" />}
+                                                </Button>
+                                            </div>
+                                            {!secondaryPromptCollapsed && <AutocompleteTextarea
+                                                value={costumePrompt}
+                                                onChange={(e) => onUpdate({ prompt: joinCostumePrompt(characterPrompt, e.target.value) })}
+                                                placeholder={t('characterPanel.costumePlaceholder')}
+                                                className={cn("mt-1.5 flex-1 min-h-0 text-sm resize-none", !costumeEnabled && "opacity-50")}
+                                                style={{ fontSize: `${promptFontSize}px` }}
+                                            />}
+                                        </div>
+                                    </div>
+                                ) : (
+                                    <div className="flex h-[376px] min-w-0 flex-col gap-3">
+                                        <div
+                                            className={cn(
+                                                "min-w-0 overflow-hidden flex flex-col transition-[height,flex-grow,flex-basis] duration-200",
+                                                primaryPromptCollapsed && "h-7 flex-none"
+                                            )}
+                                            style={primaryPromptCollapsed ? undefined : { flex: '180 1 0%' }}
+                                        >
+                                            <button
+                                                type="button"
+                                                className="flex h-6 items-center gap-1 text-xs font-medium text-muted-foreground hover:text-foreground"
+                                                onClick={() => setPrimaryPromptCollapsed(value => !value)}
+                                            >
+                                                {primaryPromptCollapsed ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronUp className="h-3.5 w-3.5" />}
+                                                <span className="whitespace-nowrap">{t('characterPanel.prompt', 'Prompt')}</span>
+                                                <Tip content={t('characterPanel.commentHint', 'Use # followed by a space for comments. #target and #source are sent to NovelAI.') }>
+                                                    <CircleHelp className="h-3.5 w-3.5 text-muted-foreground" />
+                                                </Tip>
+                                            </button>
+                                            {!primaryPromptCollapsed && <AutocompleteTextarea
+                                                value={character.prompt}
+                                                onChange={(e) => onUpdate({ prompt: e.target.value })}
+                                                placeholder={t('characterPanel.promptPlaceholder')}
+                                                className="mt-1.5 flex-1 min-h-0 text-sm resize-none"
+                                                style={{ fontSize: `${promptFontSize}px` }}
+                                            />}
+                                        </div>
+                                        <div
+                                            className={cn(
+                                                "min-w-0 overflow-hidden flex flex-col transition-[height,flex-grow,flex-basis] duration-200",
+                                                secondaryPromptCollapsed && "h-7 flex-none"
+                                            )}
+                                            style={secondaryPromptCollapsed ? undefined : { flex: '140 1 0%' }}
+                                        >
+                                            <button
+                                                type="button"
+                                                className="flex h-6 items-center gap-1 text-xs font-medium text-destructive/70 hover:text-destructive"
+                                                onClick={() => setSecondaryPromptCollapsed(value => !value)}
+                                            >
+                                                {secondaryPromptCollapsed ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronUp className="h-3.5 w-3.5" />}
+                                                <span className="whitespace-nowrap">{t('characterPanel.negative', 'Negative')}</span>
+                                            </button>
+                                            {!secondaryPromptCollapsed && <AutocompleteTextarea
+                                                value={character.negative}
+                                                onChange={(e) => onUpdate({ negative: e.target.value })}
+                                                placeholder={t('characterPanel.negativePlaceholder')}
+                                                className="mt-1.5 flex-1 min-h-0 text-sm border-destructive/20 resize-none"
+                                                style={{ fontSize: `${promptFontSize}px` }}
+                                            />}
+                                        </div>
+                                    </div>
+                                )}
+                                {expertCharacterPromptVariantsEnabled && (
+                                        <div className="flex items-center justify-between gap-2 py-1">
+                                        <div className="flex items-center gap-1">
+                                            {variants.length > 1 && (
+                                                <DndContext
+                                                    sensors={variantSensors}
+                                                    autoScroll={false}
+                                                    onDragEnd={({ active, over }) => {
+                                                        if (!over) return
+                                                        onReorderVariants(
+                                                            String(active.id).replace('variant-', ''),
+                                                            String(over.id).replace('variant-', ''),
+                                                        )
+                                                    }}
+                                                >
+                                                    <SortableContext
+                                                        items={variants.map(variant => `variant-${variant.id}`)}
+                                                        strategy={horizontalListSortingStrategy}
+                                                    >
+                                                        <div className="flex items-center gap-1">
+                                                            {variants.map((variant, i) => (
+                                                                <SortableVariantButton
+                                                                    key={variant.id}
+                                                                    variant={variant}
+                                                                    index={i}
+                                                                    selected={variant.id === character.id}
+                                                                    onSelect={onSelectVariant}
+                                                                />
+                                                            ))}
+                                                        </div>
+                                                    </SortableContext>
+                                                </DndContext>
+                                            )}
+                                            {variants.length < 5 && (
+                                                <Button size="icon" variant="outline" className="h-8 w-8 rounded-md border-dashed" onClick={onAddVariant}>
+                                                    <Plus className="h-3.5 w-3.5" />
+                                                </Button>
+                                            )}
+                                        </div>
+                                        {variants.length > 1 && (
+                                            <Button size="icon" variant="ghost" className="h-8 w-8 rounded-md text-destructive hover:text-destructive hover:bg-destructive/10" onClick={onRemove}>
+                                                <Trash2 className="h-3.5 w-3.5" />
+                                            </Button>
+                                        )}
+                                    </div>
+                                )}                            </div>
+                        )}
+                    </div>
+                </ContextMenuTrigger>
+                <ContextMenuContent>
+                    <ContextMenuItem onClick={() => setRenameDialogOpen(true)}>
+                        <Pencil className="h-4 w-4 mr-2" />
+                        {t('characterPanel.rename', '이름 변경')}
+                    </ContextMenuItem>
+                    <ContextMenuItem onClick={onToggleEnabled}>
+                        {character.enabled ? (
+                            <>
+                                <EyeOff className="h-4 w-4 mr-2" />
+                                {t('characterPanel.disable', '비활성화')}
+                            </>
+                        ) : (
+                            <>
+                                <Eye className="h-4 w-4 mr-2" />
+                                {t('characterPanel.enable', '활성화')}
+                            </>
+                        )}
+                    </ContextMenuItem>
+                    <ContextMenuItem onClick={onDuplicate}>
+                        <Copy className="h-4 w-4 mr-2" />
+                        {t('characterPanel.duplicate', '복제')}
+                    </ContextMenuItem>
+                    <ContextMenuSeparator />
+                    <ContextMenuItem onClick={onSaveAsPreset}>
+                        <Save className="h-4 w-4 mr-2" />
+                        {t('characterPanel.saveAsPreset', '프리셋으로 저장')}
+                    </ContextMenuItem>
+                    {groups.length > 0 && (
+                        <ContextMenuSub>
+                            <ContextMenuSubTrigger>
+                                <Folder className="h-4 w-4 mr-2" />
+                                {t('characterPanel.moveToFolder', '폴더로 이동')}
+                            </ContextMenuSubTrigger>
+                            <ContextMenuSubContent>
+                                {character.groupId && (
+                                    <ContextMenuItem onClick={() => onMoveToGroup(character.id, undefined)}>
+                                        <X className="h-4 w-4 mr-2" />
+                                        {t('characterPanel.removeFromFolder', '폴더에서 제거')}
+                                    </ContextMenuItem>
+                                )}
+                                {groups.map(group => (
+                                    <ContextMenuItem
+                                        key={group.id}
+                                        onClick={() => onMoveToGroup(character.id, group.id)}
+                                        disabled={character.groupId === group.id}
+                                    >
+                                        <Folder className="h-4 w-4 mr-2 text-amber-500" />
+                                        {getCharacterGroupPath(groups, group.id)}
+                                    </ContextMenuItem>
+                                ))}
+                            </ContextMenuSubContent>
+                        </ContextMenuSub>
+                    )}
+                    <ContextMenuSeparator />
+                    <ContextMenuItem onClick={onRemove} className="text-destructive">
+                        <Trash2 className="h-4 w-4 mr-2" />
+                        {t('common.delete', '삭제')}
+                    </ContextMenuItem>
+                </ContextMenuContent>
+            </ContextMenu>
+
+            {/* 이름 변경 다이얼로그 */}
+            <Dialog open={renameDialogOpen} onOpenChange={setRenameDialogOpen}>
+                <DialogContent className="max-w-sm">
+                    <DialogHeader>
+                        <DialogTitle className="flex items-center gap-2">
+                            <Pencil className="h-4 w-4" />
+                            {t('characterPanel.rename', '이름 변경')}
+                        </DialogTitle>
+                    </DialogHeader>
+                    <div className="space-y-4 pt-2">
+                        {expertCharacterPromptVariantsEnabled && variants.length > 1 ? (
+                            <div className="space-y-2">
+                                {variants.map((variant, i) => (
+                                    <div key={variant.id} className="flex items-center gap-2">
+                                        <span className="w-6 text-xs text-muted-foreground text-center">{i + 1}</span>
+                                        <Input
+                                            value={variantNames[variant.id] ?? getVariantBaseName(variant, '')}
+                                            onChange={(e) => setVariantNames(prev => ({ ...prev, [variant.id]: e.target.value }))}
+                                            placeholder={t('characterPanel.namePlaceholder', '??? ?? ??...')}
+                                            autoFocus={variant.id === character.id}
+                                        />
+                                    </div>
+                                ))}
+                            </div>
+                        ) : (
+                            <Input
+                                value={newName}
+                                onChange={(e) => setNewName(e.target.value)}
+                                placeholder={t('characterPanel.namePlaceholder', '??? ?? ??...')}
+                                onKeyDown={(e) => {
+                                    if (e.key === 'Enter') saveVariantNames()
+                                }}
+                                autoFocus
+                            />
+                        )}
+                        <div className="flex justify-end gap-2">
+                            <Button variant="outline" size="sm" onClick={() => setRenameDialogOpen(false)}>
+                                {t('common.cancel', '??')}
+                            </Button>
+                            <Button size="sm" onClick={saveVariantNames}>
+                                {t('common.save', '??')}
+                            </Button>
+                        </div>
+                    </div>
+                </DialogContent>
+            </Dialog>
+        </>
+    )
+}
+
+// --- Position Overlay ---
+interface PositionOverlayProps {
+    open: boolean
+    onOpenChange: (open: boolean) => void
+    characters: CharacterPrompt[]
+    onPositionChange: (id: string, x: number, y: number) => void
+}
+
+interface PositionOverlayPlacement extends CharacterPositionRect {
+    fallbackBackground: boolean
+    controlsTop: number
+    controlsRight: number
+}
+
+function PositionOverlay({ open, onOpenChange, characters, onPositionChange }: PositionOverlayProps) {
+    const { t } = useTranslation()
+    const location = useLocation()
+    const selectedResolution = useGenerationStore(state => state.selectedResolution)
+    const mode = useSettingsStore(state => state.characterPositionMode)
+    const setMode = useSettingsStore(state => state.setCharacterPositionMode)
+    const [placement, setPlacement] = useState<PositionOverlayPlacement | null>(null)
+    const [dragging, setDragging] = useState(false)
+    const [draftPositions, setDraftPositions] = useState<Record<string, { x: number, y: number }>>({})
+    const surfaceRef = useRef<HTMLDivElement>(null)
+    const controlsRef = useRef<HTMLDivElement>(null)
+    const boardAspectRatio = selectedResolution.width / selectedResolution.height
+    const enabledCharacters = characters.filter(c => c.enabled)
+
+    useEffect(() => {
+        if (!open) {
+            setPlacement(null)
+            setDraftPositions({})
+            delete document.documentElement.dataset.characterPositionFallback
+            return
+        }
+
+        document.documentElement.dataset.characterPositionOpen = 'true'
+        const host = document.querySelector<HTMLElement>('[data-character-position-host]')
+        const image = document.querySelector<HTMLImageElement>('[data-character-position-image]')
+        const actions = document.querySelector<HTMLElement>('[data-character-position-actions]')
+        if (!host) return () => {
+            delete document.documentElement.dataset.characterPositionOpen
+        }
+
+        const updatePlacement = () => {
+            const hostRect = host.getBoundingClientRect()
+            const actionsRect = actions?.getBoundingClientRect()
+            const matchesPreview = location.pathname === '/'
+                && image?.complete
+                && image.naturalWidth === selectedResolution.width
+                && image.naturalHeight === selectedResolution.height
+            const rect = matchesPreview && image
+                ? getContainedImageRect(image.getBoundingClientRect(), image.naturalWidth, image.naturalHeight)
+                : fitCharacterPositionRect(hostRect, boardAspectRatio)
+            if (matchesPreview) {
+                delete document.documentElement.dataset.characterPositionFallback
+            } else {
+                document.documentElement.dataset.characterPositionFallback = 'true'
+            }
+            setPlacement({
+                ...rect,
+                fallbackBackground: !matchesPreview,
+                controlsTop: actionsRect?.top ?? hostRect.top + 16,
+                controlsRight: window.innerWidth - (actionsRect?.right ?? hostRect.right - 16),
+            })
+        }
+        const handleKeyDown = (event: KeyboardEvent) => {
+            if (event.key !== 'Escape') return
+            event.preventDefault()
+            event.stopPropagation()
+            onOpenChange(false)
+        }
+
+        updatePlacement()
+        const resizeObserver = new ResizeObserver(updatePlacement)
+        resizeObserver.observe(host)
+        if (image) {
+            resizeObserver.observe(image)
+            image.addEventListener('load', updatePlacement)
+        }
+        window.addEventListener('resize', updatePlacement)
+        window.addEventListener('scroll', updatePlacement, true)
+        window.addEventListener('keydown', handleKeyDown, true)
+        return () => {
+            resizeObserver.disconnect()
+            image?.removeEventListener('load', updatePlacement)
+            window.removeEventListener('resize', updatePlacement)
+            window.removeEventListener('scroll', updatePlacement, true)
+            window.removeEventListener('keydown', handleKeyDown, true)
+            delete document.documentElement.dataset.characterPositionOpen
+            delete document.documentElement.dataset.characterPositionFallback
+        }
+    }, [open, location.pathname, selectedResolution.width, selectedResolution.height, boardAspectRatio, onOpenChange])
+
+    const handleDraftPositionChange = useCallback((id: string, x: number, y: number) => {
+        setDraftPositions(current => ({ ...current, [id]: { x, y } }))
+    }, [])
+
+    const handlePositionCommit = useCallback((id: string, x: number, y: number) => {
+        onPositionChange(id, x, y)
+        setDraftPositions(current => {
+            const next = { ...current }
+            delete next[id]
+            return next
+        })
+    }, [onPositionChange])
+
+    if (!open || !placement) return null
+
+    const handleOutsideMouseDown = (event: ReactMouseEvent<HTMLDivElement>) => {
+        if (event.button !== 0 || dragging || !surfaceRef.current) return
+        if (surfaceRef.current.contains(event.target as Node)) return
+        if (controlsRef.current?.contains(event.target as Node)) return
+        const rect = surfaceRef.current.getBoundingClientRect()
+        const padding = 12
+        if (
+            event.clientX < rect.left - padding
+            || event.clientX > rect.right + padding
+            || event.clientY < rect.top - padding
+            || event.clientY > rect.bottom + padding
+        ) {
+            onOpenChange(false)
+        }
+    }
+
+    return createPortal(
+        <div
+            className="fixed inset-0 z-[100]"
+            role="dialog"
+            aria-label={t('characterPanel.positionTitle', '캐릭터 위치 지정')}
+            onMouseDown={handleOutsideMouseDown}
+        >
+            <div
+                ref={surfaceRef}
+                className={cn('absolute', placement.fallbackBackground ? 'bg-muted/80' : 'bg-black/40')}
+                style={{
+                    left: placement.left,
+                    top: placement.top,
+                    width: placement.width,
+                    height: placement.height,
+                }}
+            >
+                <CharacterPositionBoard
+                    aspectRatio={boardAspectRatio}
+                    mode={mode}
+                    className="h-full w-full rounded-none border-0 bg-transparent shadow-none"
+                    markerClassName="h-9 w-9 text-sm"
+                    gridClassName={placement.fallbackBackground ? 'border-foreground/25' : 'border-white/50'}
+                    markers={enabledCharacters.map((character) => {
+                        const colorIndex = characters.findIndex(candidate => candidate.id === character.id)
+                        return {
+                            id: character.id,
+                            label: String(colorIndex + 1),
+                            position: draftPositions[character.id] || character.position,
+                            color: CHARACTER_COLORS[colorIndex % CHARACTER_COLORS.length],
+                        }
+                    })}
+                    onPositionChange={handleDraftPositionChange}
+                    onPositionCommit={handlePositionCommit}
+                    onDraggingChange={setDragging}
+                />
+
+            </div>
+            <div
+                ref={controlsRef}
+                className="absolute z-30 flex w-max items-center gap-2"
+                style={{ top: placement.controlsTop, right: placement.controlsRight }}
+            >
+                <div className="flex rounded-full bg-black/90 p-1">
+                    {(['grid', 'free'] as const).map(value => (
+                        <button
+                            key={value}
+                            type="button"
+                            className={cn(
+                                'h-8 whitespace-nowrap rounded-full px-3 text-xs font-medium transition-colors',
+                                mode === value ? 'bg-white text-black' : 'text-white/70 hover:text-white',
+                            )}
+                            onClick={() => setMode(value)}
+                        >
+                            {value === 'grid'
+                                ? t('characterPanel.positionGrid', '그리드')
+                                : t('characterPanel.positionFree', '자유')}
+                        </button>
+                    ))}
+                </div>
+                <button
+                    type="button"
+                    autoFocus
+                    className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-black/90 text-white hover:bg-black"
+                    onClick={() => onOpenChange(false)}
+                    aria-label={t('common.close', '닫기')}
+                >
+                    <X className="h-5 w-5" />
+                </button>
+            </div>
+        </div>,
+        document.body,
+    )
+}

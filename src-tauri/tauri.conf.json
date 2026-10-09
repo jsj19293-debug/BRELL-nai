@@ -1,0 +1,79 @@
+{
+  "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
+  "productName": "NAIS2-Forge",
+  "version": "1.13.0",
+  "identifier": "com.iztaciyu.nais2forge",
+  "build": {
+    "frontendDist": "../dist",
+    "devUrl": "http://localhost:9090",
+    "beforeDevCommand": "npm run dev",
+    "beforeBuildCommand": "npm run build"
+  },
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "create": false,
+        "title": "NAIS2-Forge - NovelAI Image Studio",
+        "width": 1600,
+        "height": 900,
+        "resizable": true,
+        "fullscreen": false,
+        "dragDropEnabled": false,
+        "decorations": false
+      }
+    ],
+    "security": {
+      "csp": null,
+      "assetProtocol": {
+        "enable": true,
+        "scope": ["**", "$HOME/**", "$PICTURE/**", "$DESKTOP/**", "$DOWNLOAD/**", "$DOCUMENT/**", "$APPDATA/**", "$LOCALAPPDATA/**", "C:/**", "D:/**", "E:/**", "F:/**", "G:/**", "H:/**"]
+      }
+    }
+  },
+  "plugins": {
+    "shell": {
+      "open": true
+    },
+    "updater": {
+      "endpoints": [
+        "https://github.com/IZTACIYU/NAIS2-Forge/releases/latest/download/latest.json"
+      ],
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDgxODNDMjNDNjcxQzAyOEIKUldTTEFoeG5QTUtEZ1J1bTVxbHFEVkI0bHREOEpDa1liZmZRWVkzT1d5ak9HbEdud1pMTDB3TDEK"
+    },
+    "deep-link": {
+      "mobile": [],
+      "desktop": {
+        "schemes": ["nais2-forge"]
+      }
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": [
+      "nsis",
+      "msi",
+      "dmg",
+      "app"
+    ],
+    "createUpdaterArtifacts": true,
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ],
+    "macOS": {
+      "minimumSystemVersion": "10.13",
+      "entitlements": null,
+      "exceptionDomain": null
+    },
+    "windows": {
+      "nsis": {
+        "installMode": "both",
+        "installerHooks": "nsis/installer-hooks.nsh"
+      }
+    }
+  }
+}
