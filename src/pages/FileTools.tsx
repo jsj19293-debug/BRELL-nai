@@ -30,6 +30,94 @@ async function pickImages(): Promise<string[]> {
     return (Array.isArray(selected) ? selected : [selected]).filter((path): path is string => typeof path === 'string')
 }
 
+// ── 끌어다 놓은 파일 ──
+// 창에 끌어다 놓은 파일은 위치(경로)를 알 수 없고 내용만 받는다. 고른 파일과 같은 방식으로 다루려고
+// "drop://<묶음>/<하위 폴더>/<이름>" 꼴의 가짜 경로를 붙여 보관한다.
+const DROP_PREFIX = 'drop://'
+const droppedFiles = new Map<string, File>()
+const droppedUrls = new Map<string, string>()
+const isDropped = (path: string) => path.startsWith(DROP_PREFIX)
+
+function forgetDropped(paths: readonly string[]): void {
+    for (const path of paths) {
+        if (!isDropped(path)) continue
+        droppedFiles.delete(path)
+        const url = droppedUrls.get(path)
+        if (url) URL.revokeObjectURL(url)
+        droppedUrls.delete(path)
+    }
+}
+
+async function readBytes(path: string): Promise<Uint8Array> {
+    if (!isDropped(path)) return readFile(path)
+    const file = droppedFiles.get(path)
+    if (!file) throw new Error('끌어다 놓은 파일을 다시 넣어 주세요')
+    return new Uint8Array(await file.arrayBuffer())
+}
+
+function thumbSrc(path: string): string {
+    if (!isDropped(path)) return convertFileSrc(path)
+    let url = droppedUrls.get(path)
+    const file = droppedFiles.get(path)
+    if (!url && file) {
+        url = URL.createObjectURL(file)
+        droppedUrls.set(path, url)
+    }
+    return url ?? ''
+}
+
+/* eslint-disable @typescript-eslint/no-explicit-any */
+/** 폴더 항목 하나를 끝까지 읽는다 (브라우저는 한 번에 일부만 돌려준다). */
+function readAllEntries(directory: any): Promise<any[]> {
+    const reader = directory.createReader()
+    const all: any[] = []
+    return new Promise((resolve, reject) => {
+        const next = () => reader.readEntries((batch: any[]) => {
+            if (batch.length === 0) resolve(all)
+            else { all.push(...batch); next() }
+        }, reject)
+        next()
+    })
+}
+
+async function walkEntry(entry: any, folders: string[], out: Array<{ file: File; folders: string[] }>, depth: number): Promise<void> {
+    if (!entry || depth > 8) return
+    if (entry.isFile) {
+        if (!isImageName(entry.name)) return
+        const file = await new Promise<File>((resolve, reject) => entry.file(resolve, reject))
+        out.push({ file, folders })
+    } else if (entry.isDirectory) {
+        if (entry.name === STRIP_FOLDER_NAME) return
+        for (const child of await readAllEntries(entry)) await walkEntry(child, [...folders, entry.name], out, depth + 1)
+    }
+}
+/* eslint-enable @typescript-eslint/no-explicit-any */
+
+/** 끌어다 놓은 것(파일 · 폴더 여러 개)에서 이미지를 모두 꺼내 가짜 경로로 돌려준다. root 는 이번 묶음의 기준 경로. */
+async function takeDropped(transfer: DataTransfer): Promise<{ root: string; paths: string[] }> {
+    // 항목 목록은 이벤트가 끝나면 사라지므로 먼저 전부 꺼내 둔다.
+    const entries = Array.from(transfer.items ?? [])
+        .map(item => (item.kind === 'file' && typeof item.webkitGetAsEntry === 'function' ? item.webkitGetAsEntry() : null))
+        .filter(Boolean)
+    const loose = Array.from(transfer.files ?? [])
+    const found: Array<{ file: File; folders: string[] }> = []
+    if (entries.length > 0) {
+        for (const entry of entries) await walkEntry(entry, [], found, 0)
+    } else {
+        for (const file of loose) if (isImageName(file.name)) found.push({ file, folders: [] })
+    }
+    const root = `${DROP_PREFIX}${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`
+    const paths = found.map(item => {
+        const path = [root, ...item.folders, item.file.name].join('/')
+        droppedFiles.set(path, item.file)
+        return path
+    })
+    paths.sort((a, b) => a.localeCompare(b, undefined, { numeric: true }))
+    return { root, paths }
+}
+
+const hasFiles = (event: { dataTransfer: DataTransfer | null }) => Array.from(event.dataTransfer?.types ?? []).includes('Files')
+
 /** 폴더 안의 이미지를 하위 폴더까지 모두 찾는다. skip 폴더(결과 폴더)는 들어가지 않는다. */
 async function collectImages(folder: string, skip: string, found: string[] = [], depth = 0): Promise<string[]> {
     if (depth > 8) return found
@@ -72,7 +160,8 @@ function StripTab() {
     const [paths, setPaths] = useState<string[]>([])
     /** 폴더로 골랐으면 그 폴더 (하위 폴더 구조를 그대로 옮기는 기준) */
     const [root, setRoot] = useState('')
-    const [outDir, setOutDir] = useState('')
+    const [outDirState, setOutDir] = useState('')
+    const outDir = outDirState
     const [format, setFormat] = useState<ExifOutputFormat>('png')
     const [quality, setQuality] = useState(92)
     const [crop, setCrop] = useState(true)
@@ -84,14 +173,21 @@ function StripTab() {
 
     const base = root || commonParent(paths)
 
+    const [dropping, setDropping] = useState(false)
+    const pathsRef = useRef(paths)
+    pathsRef.current = paths
+    useEffect(() => () => forgetDropped(pathsRef.current), [])
+
     const setSources = async (next: string[], nextRoot: string) => {
+        forgetDropped(pathsRef.current.filter(path => !next.includes(path)))
         setPaths(next)
         setRoot(nextRoot)
         setDone(0)
         setFailed([])
         setFinishedDir('')
+        // 끌어다 놓은 파일은 원래 위치를 알 수 없어서 저장 폴더를 직접 골라야 한다.
         const parent = nextRoot || commonParent(next)
-        setOutDir(parent ? await join(parent, STRIP_FOLDER_NAME) : '')
+        setOutDir(parent && !isDropped(parent) ? await join(parent, STRIP_FOLDER_NAME) : '')
     }
 
     const handlePickImages = async () => {
@@ -116,13 +212,36 @@ function StripTab() {
             toast({ title: t('fileTools.pickFailed', '파일을 고르지 못했어요'), description: String(error), variant: 'destructive' })
         }
     }
-    const handlePickOutput = async () => {
+    const handlePickOutput = async (): Promise<string> => {
         const folder = await openDialog({ directory: true, multiple: false, defaultPath: outDir || undefined }).catch(() => null)
-        if (folder && typeof folder === 'string') setOutDir(folder)
+        if (folder && typeof folder === 'string') {
+            setOutDir(folder)
+            return folder
+        }
+        return ''
+    }
+    const handleDrop = async (event: React.DragEvent) => {
+        if (!hasFiles(event)) return
+        event.preventDefault()
+        setDropping(false)
+        if (running) return
+        try {
+            const dropped = await takeDropped(event.dataTransfer)
+            if (dropped.paths.length === 0) {
+                toast({ title: t('fileTools.dropNoImages', '끌어다 놓은 것에 이미지가 없습니다') })
+                return
+            }
+            await setSources(dropped.paths, dropped.root)
+        } catch (error) {
+            toast({ title: t('fileTools.pickFailed', '파일을 고르지 못했어요'), description: String(error), variant: 'destructive' })
+        }
     }
 
     const handleRun = async () => {
-        if (paths.length === 0 || !outDir || running) return
+        if (paths.length === 0 || running) return
+        // 저장 폴더가 아직 없으면(끌어다 놓은 경우) 먼저 고르게 한다.
+        const outDir = outDirState || await handlePickOutput()
+        if (!outDir) return
         setRunning(true)
         setDone(0)
         setFailed([])
@@ -136,7 +255,7 @@ function StripTab() {
                 const path = paths[index]
                 const name = fileNameOf(path)
                 try {
-                    let source = await bytesToImageDataUrl(await readFile(path), name)
+                    let source = await bytesToImageDataUrl(await readBytes(path), name)
                     if (crop) source = await cropBottomRow(source)
                     // 자른 뒤에는 반드시 다시 인코딩한다 (원본 바이트를 그대로 쓰면 잘리지 않는다).
                     const result = await stripImageMetadata(source, format, format === 'png' ? 1 : quality / 100, crop)
@@ -168,7 +287,13 @@ function StripTab() {
     }
 
     return (
-        <div className="flex min-h-0 flex-1 gap-4 p-4">
+        <div
+            className={cn('flex min-h-0 flex-1 gap-4 p-4', dropping && 'bg-primary/5 outline-dashed outline-2 -outline-offset-4 outline-primary/60')}
+            data-strip-drop
+            onDragOver={event => { if (hasFiles(event)) { event.preventDefault(); setDropping(true) } }}
+            onDragLeave={event => { if (event.currentTarget === event.target) setDropping(false) }}
+            onDrop={event => void handleDrop(event)}
+        >
             <div className="flex w-[24rem] shrink-0 flex-col gap-4 overflow-y-auto">
                 <p className="text-xs text-muted-foreground">
                     {t('fileTools.strip.desc', '이미지에 들어 있는 생성 정보(프롬프트 · 시드 등 메타데이터, 숨은 정보 포함)를 지워 새 파일로 저장합니다. 원본은 그대로 둡니다.')}
@@ -208,7 +333,7 @@ function StripTab() {
                 <div className="grid gap-1.5">
                     <span className="text-xs font-medium">{t('fileTools.outputFolder', '저장 폴더')}</span>
                     <div className="flex items-center gap-2">
-                        <span className="min-w-0 flex-1 truncate rounded-lg border border-border/60 bg-muted/20 px-2.5 py-1.5 text-xs text-muted-foreground" title={outDir}>{outDir || t('fileTools.outputEmpty', '이미지를 고르면 정해집니다')}</span>
+                        <span className="min-w-0 flex-1 truncate rounded-lg border border-border/60 bg-muted/20 px-2.5 py-1.5 text-xs text-muted-foreground" title={outDir}>{outDir || (paths.length > 0 ? t('fileTools.outputAsk', '저장할 때 폴더를 고릅니다') : t('fileTools.outputEmpty', '이미지를 고르면 정해집니다'))}</span>
                         <Button variant="outline" size="sm" className="h-8 shrink-0" onClick={() => void handlePickOutput()} disabled={running || paths.length === 0}>{t('fileTools.change', '변경')}</Button>
                     </div>
                     {root && <span className="text-[11px] text-muted-foreground">{t('fileTools.strip.keepTree', '하위 폴더 구조를 그대로 옮깁니다.')}</span>}
@@ -220,7 +345,7 @@ function StripTab() {
                             {t('fileTools.strip.stop', '중지 ({{done}} / {{total}})', { done, total: paths.length })}
                         </Button>
                     ) : (
-                        <Button className="h-10 flex-1" onClick={() => void handleRun()} disabled={paths.length === 0 || !outDir} data-strip-run>
+                        <Button className="h-10 flex-1" onClick={() => void handleRun()} disabled={paths.length === 0} data-strip-run>
                             <Eraser className="mr-2 h-4 w-4" />
                             {t('fileTools.strip.run', '메타데이터 지우고 저장 ({{n}}장)', { n: paths.length })}
                         </Button>
@@ -238,7 +363,7 @@ function StripTab() {
             </div>
             <div className="min-h-0 flex-1 overflow-y-auto rounded-xl border border-border/50 bg-background/40 p-3">
                 {paths.length === 0 ? (
-                    <p className="py-20 text-center text-sm text-muted-foreground">{t('fileTools.strip.empty', '왼쪽에서 이미지나 폴더를 고르세요. 여러 장을 한 번에 고를 수 있습니다.')}</p>
+                    <p className="py-20 text-center text-sm text-muted-foreground">{t('fileTools.strip.empty2', '이미지나 폴더를 여기에 끌어다 놓거나, 왼쪽 버튼으로 고르세요. 여러 장 · 여러 폴더를 한 번에 넣을 수 있습니다.')}</p>
                 ) : (
                     <>
                         <p className="mb-2 text-xs text-muted-foreground" data-strip-count>
@@ -248,8 +373,8 @@ function StripTab() {
                         </p>
                         <div className="grid gap-2" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(7rem, 1fr))' }}>
                             {paths.slice(0, 120).map((path, index) => (
-                                <div key={path} className={cn('overflow-hidden rounded-lg border bg-muted/30', index < done ? (failed.includes(fileNameOf(path)) ? 'border-red-500' : 'border-emerald-500') : 'border-border/50')} title={path}>
-                                    <img src={convertFileSrc(path)} alt="" loading="lazy" decoding="async" className="aspect-[2/3] w-full object-cover" />
+                                <div key={path} className={cn('overflow-hidden rounded-lg border bg-muted/30', index < done ? (failed.includes(fileNameOf(path)) ? 'border-red-500' : 'border-emerald-500') : 'border-border/50')} title={isDropped(path) ? fileNameOf(path) : path}>
+                                    <img src={thumbSrc(path)} alt="" loading="lazy" decoding="async" className="aspect-[2/3] w-full object-cover" />
                                     <p className="truncate px-1.5 py-1 text-[10px] text-muted-foreground">{relativeDir(path, base) ? `${relativeDir(path, base)}/` : ''}{fileNameOf(path)}</p>
                                 </div>
                             ))}
@@ -278,7 +403,7 @@ const RATIOS: Array<{ label: string; w: number; h: number }> = [
 ]
 
 async function loadBitmap(path: string): Promise<ImageBitmap> {
-    const bytes = await readFile(path)
+    const bytes = await readBytes(path)
     return createImageBitmap(new Blob([bytes as unknown as BlobPart]))
 }
 
@@ -313,8 +438,31 @@ function SlideshowTab() {
             const picked = await pickImages()
             if (picked.length === 0) return
             const sorted = [...picked].sort((a, b) => fileNameOf(a).localeCompare(fileNameOf(b), undefined, { numeric: true }))
-            setSlides(current => [...current, ...sorted.map((path, index) => ({ id: `${Date.now()}-${index}-${Math.random().toString(36).slice(2, 7)}`, path, seconds: '' }))])
-            clearResult()
+            addPaths(sorted)
+        } catch (error) {
+            toast({ title: t('fileTools.pickFailed', '파일을 고르지 못했어요'), description: String(error), variant: 'destructive' })
+        }
+    }
+
+    const [dropping, setDropping] = useState(false)
+    const slidesRef = useRef(slides)
+    slidesRef.current = slides
+    useEffect(() => () => forgetDropped(slidesRef.current.map(slide => slide.path)), [])
+
+    const addPaths = (paths: string[]) => {
+        setSlides(current => [...current, ...paths.map((path, index) => ({ id: `${Date.now()}-${index}-${Math.random().toString(36).slice(2, 7)}`, path, seconds: '' }))])
+        clearResult()
+    }
+    // 창 밖에서 끌어온 파일 · 폴더는 목록 뒤에 더한다 (목록 안에서 끄는 것은 순서 바꾸기).
+    const handleDropFiles = async (event: React.DragEvent) => {
+        if (!hasFiles(event)) return
+        event.preventDefault()
+        setDropping(false)
+        if (building) return
+        try {
+            const dropped = await takeDropped(event.dataTransfer)
+            if (dropped.paths.length === 0) toast({ title: t('fileTools.dropNoImages', '끌어다 놓은 것에 이미지가 없습니다') })
+            else addPaths(dropped.paths)
         } catch (error) {
             toast({ title: t('fileTools.pickFailed', '파일을 고르지 못했어요'), description: String(error), variant: 'destructive' })
         }
@@ -414,7 +562,13 @@ function SlideshowTab() {
     )
 
     return (
-        <div className="flex min-h-0 flex-1 gap-4 p-4">
+        <div
+            className={cn('flex min-h-0 flex-1 gap-4 p-4', dropping && 'bg-primary/5 outline-dashed outline-2 -outline-offset-4 outline-primary/60')}
+            data-slide-drop
+            onDragOver={event => { if (hasFiles(event)) { event.preventDefault(); setDropping(true) } }}
+            onDragLeave={event => { if (event.currentTarget === event.target) setDropping(false) }}
+            onDrop={event => void handleDropFiles(event)}
+        >
             <div className="flex w-[24rem] shrink-0 flex-col gap-3 overflow-y-auto">
                 <p className="text-xs text-muted-foreground">
                     {t('fileTools.slideshow.desc', '여러 사진을 순서대로 재생하는 움직이는 WebP 한 파일을 만듭니다. 목록에서 끌어서 순서를 바꾸고, 사진마다 표시 시간을 따로 줄 수 있습니다.')}
@@ -455,15 +609,16 @@ function SlideshowTab() {
                 </label>
 
                 <ul className="min-h-[6rem] flex-1 space-y-1 overflow-y-auto rounded-xl border border-border/50 bg-background/40 p-1.5" data-slide-list>
-                    {slides.length === 0 && <li className="px-2 py-8 text-center text-xs text-muted-foreground">{t('fileTools.slideshow.empty', '사진을 추가하세요. 두 장 이상이면 슬라이드쇼가 됩니다.')}</li>}
+                    {slides.length === 0 && <li className="px-2 py-8 text-center text-xs text-muted-foreground">{t('fileTools.slideshow.empty2', '사진이나 폴더를 여기에 끌어다 놓거나 "사진 추가"를 누르세요. 두 장 이상이면 슬라이드쇼가 됩니다.')}</li>}
                     {slides.map((slide, index) => (
                         <li
                             key={slide.id}
                             data-slide
                             draggable={!building}
                             onDragStart={() => { dragId.current = slide.id }}
-                            onDragOver={event => event.preventDefault()}
+                            onDragOver={event => { if (!hasFiles(event)) event.preventDefault() }}
                             onDrop={event => {
+                                if (hasFiles(event)) return
                                 event.preventDefault()
                                 const from = slides.findIndex(item => item.id === dragId.current)
                                 dragId.current = null
@@ -473,8 +628,8 @@ function SlideshowTab() {
                         >
                             <GripVertical className="h-4 w-4 shrink-0 cursor-grab text-muted-foreground" />
                             <span className="w-5 shrink-0 text-center text-[11px] tabular-nums text-muted-foreground">{index + 1}</span>
-                            <img src={convertFileSrc(slide.path)} alt="" draggable={false} loading="lazy" className="h-10 w-10 shrink-0 rounded object-cover" />
-                            <span className="min-w-0 flex-1 truncate text-xs" title={slide.path}>{fileNameOf(slide.path)}</span>
+                            <img src={thumbSrc(slide.path)} alt="" draggable={false} loading="lazy" className="h-10 w-10 shrink-0 rounded object-cover" />
+                            <span className="min-w-0 flex-1 truncate text-xs" title={isDropped(slide.path) ? fileNameOf(slide.path) : slide.path}>{fileNameOf(slide.path)}</span>
                             <Input
                                 value={slide.seconds}
                                 onChange={event => { const value = event.target.value.replace(/[^0-9.]/g, '').slice(0, 6); setSlides(current => current.map(item => item.id === slide.id ? { ...item, seconds: value } : item)); clearResult() }}
@@ -486,7 +641,7 @@ function SlideshowTab() {
                             />
                             <Button variant="ghost" size="icon" className="h-7 w-7" disabled={building || index === 0} onClick={() => move(index, index - 1)}><ArrowUp className="h-3.5 w-3.5" /></Button>
                             <Button variant="ghost" size="icon" className="h-7 w-7" disabled={building || index === slides.length - 1} onClick={() => move(index, index + 1)} data-slide-down><ArrowDown className="h-3.5 w-3.5" /></Button>
-                            <Button variant="ghost" size="icon" className="h-7 w-7 text-red-500 hover:text-red-500" disabled={building} onClick={() => { setSlides(current => current.filter(item => item.id !== slide.id)); clearResult() }}><Trash2 className="h-3.5 w-3.5" /></Button>
+                            <Button variant="ghost" size="icon" className="h-7 w-7 text-red-500 hover:text-red-500" disabled={building} onClick={() => { forgetDropped([slide.path]); setSlides(current => current.filter(item => item.id !== slide.id)); clearResult() }}><Trash2 className="h-3.5 w-3.5" /></Button>
                         </li>
                     ))}
                 </ul>
@@ -498,7 +653,7 @@ function SlideshowTab() {
                             ? t('fileTools.slideshow.building', '만드는 중 {{done}} / {{total}}', { done: progress, total: slides.length })
                             : t('fileTools.slideshow.build', 'WebP 만들기 ({{n}}장 · {{s}}초)', { n: slides.length, s: Math.round(totalSeconds * 10) / 10 })}
                     </Button>
-                    <Button variant="outline" size="icon" className="h-10 w-10" disabled={building || slides.length === 0} onClick={() => { setSlides([]); clearResult() }} title={t('fileTools.reset', '초기화')}>
+                    <Button variant="outline" size="icon" className="h-10 w-10" disabled={building || slides.length === 0} onClick={() => { forgetDropped(slides.map(slide => slide.path)); setSlides([]); clearResult() }} title={t('fileTools.reset', '초기화')}>
                         <RotateCcw className="h-4 w-4" />
                     </Button>
                 </div>
