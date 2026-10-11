@@ -356,6 +356,7 @@
   "nav": {
     "reserve": "Reserve",
     "censor": "Censor",
+    "fileTools": "Files",
     "prompts": "Prompts",
     "folders": "Folders",
     "inbox": "Inbox",

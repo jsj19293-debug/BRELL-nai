@@ -80,6 +80,8 @@ interface SettingsState {
     sceneReservationEnabled: boolean
     /** 검열 탭(폴더 이미지를 넘기며 검수 · 수동검열) 사용 */
     censorTabEnabled: boolean
+    /** 파일 도구 탭(메타데이터 제거 · 슬라이드쇼 WebP) 사용 */
+    fileToolsTabEnabled: boolean
     /** 저장 폴더 · 파일 이름 형식. 'NAIS 호환'으로 옮기면 nightmare가 된다. */
     storageNaming: StorageNaming
 
@@ -174,6 +176,7 @@ interface SettingsState {
     setCharacterAssetScenesEnabled: (enabled: boolean) => void
     setSceneReservationEnabled: (enabled: boolean) => void
     setCensorTabEnabled: (enabled: boolean) => void
+    setFileToolsTabEnabled: (enabled: boolean) => void
     /** 저장 형식을 바꾸고, 함께 바뀌는 기본 폴더 설정(출력 · 라이브러리 · EXIF)도 적용한다. */
     applyStorageNaming: (naming: StorageNaming, paths: Partial<Pick<SettingsState, 'savePath' | 'libraryPath' | 'exifAutoSavePath'>>) => void
     setSceneRefI2iCycle: (config: Partial<Pick<SettingsState, 'sceneRefI2iCycleEnabled' | 'sceneRefI2iStrength' | 'sceneRefI2iNoise' | 'sceneRefI2iDisableVibes'>>) => void
@@ -246,6 +249,7 @@ export const useSettingsStore = create<SettingsState>()(
             characterAssetScenesEnabled: true,
             sceneReservationEnabled: false,
             censorTabEnabled: false,
+            fileToolsTabEnabled: true,
             storageNaming: 'nais',
             sceneRefI2iCycleEnabled: false,
             sceneRefI2iStrength: SCENE_I2I_DEFAULT_STRENGTH,
@@ -354,6 +358,7 @@ export const useSettingsStore = create<SettingsState>()(
             setCharacterAssetScenesEnabled: (characterAssetScenesEnabled) => set({ characterAssetScenesEnabled }),
             setSceneReservationEnabled: (sceneReservationEnabled) => set({ sceneReservationEnabled }),
             setCensorTabEnabled: (censorTabEnabled) => set({ censorTabEnabled }),
+            setFileToolsTabEnabled: (fileToolsTabEnabled) => set({ fileToolsTabEnabled }),
             applyStorageNaming: (storageNaming, paths) => set({ storageNaming, ...paths }),
             setSceneRefI2iCycle: (config) => set({
                 ...config,

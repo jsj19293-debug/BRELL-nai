@@ -355,6 +355,7 @@
   "nav": {
     "reserve": "予約",
     "censor": "\u691c\u95b2",
+    "fileTools": "\u30d5\u30a1\u30a4\u30eb",
     "prompts": "プロンプト",
     "folders": "フォルダ",
     "inbox": "通知",

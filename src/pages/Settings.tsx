@@ -113,6 +113,8 @@ export default function Settings() {
     const setSceneReservationEnabled = useSettingsStore(state => state.setSceneReservationEnabled)
     const censorTabEnabled = useSettingsStore(state => state.censorTabEnabled)
     const setCensorTabEnabled = useSettingsStore(state => state.setCensorTabEnabled)
+    const fileToolsTabEnabled = useSettingsStore(state => state.fileToolsTabEnabled)
+    const setFileToolsTabEnabled = useSettingsStore(state => state.setFileToolsTabEnabled)
     const setCharacterAssetScenesEnabled = useSettingsStore(state => state.setCharacterAssetScenesEnabled)
     const setBlurModeFeatureEnabled = useSettingsStore(state => state.setBlurModeFeatureEnabled)
     const koTranslateEnabled = useSettingsStore(state => state.koTranslateEnabled)
@@ -902,6 +904,15 @@ export default function Settings() {
                                         </span>
                                     </span>
                                     <Switch checked={censorTabEnabled} onChange={event => setCensorTabEnabled(event.target.checked)} />
+                                </label>
+                                <label className="flex items-center justify-between gap-3 text-sm">
+                                    <span className="font-medium">
+                                        {t('settingsPage.fileTools.title', '파일 도구 탭 사용')}
+                                        <span className="block text-xs font-normal text-muted-foreground">
+                                            {t('settingsPage.fileTools.help', '켜면 상단 메뉴의 폴더 오른쪽에 "파일" 탭이 생깁니다. 이미지 메타데이터 제거(아랫줄 1픽셀 자르기)와 슬라이드쇼 WebP 만들기가 들어 있습니다.')}
+                                        </span>
+                                    </span>
+                                    <Switch checked={fileToolsTabEnabled} onChange={event => setFileToolsTabEnabled(event.target.checked)} />
                                 </label>
                             </div>
                         </section>

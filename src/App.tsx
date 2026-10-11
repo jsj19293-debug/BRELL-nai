@@ -24,6 +24,7 @@ const FolderManager = lazy(() => import('@/pages/FolderManager'))
 const PromptNotes = lazy(() => import('@/pages/PromptNotes'))
 const SceneReservation = lazy(() => import('@/pages/SceneReservation'))
 const CensorReview = lazy(() => import('@/pages/CensorReview'))
+const FileTools = lazy(() => import('@/pages/FileTools'))
 const Inbox = lazy(() => import('@/pages/Inbox'))
 
 function AppContent() {
@@ -72,6 +73,7 @@ function AppContent() {
                         <Route path="/prompts" element={<PromptNotes />} />
                         <Route path="/reserve" element={<SceneReservation />} />
                         <Route path="/censor" element={<CensorReview />} />
+                        <Route path="/filetools" element={<FileTools />} />
                         <Route path="/library" element={<Library />} />
                         <Route path="/inbox" element={<Inbox />} />
                         <Route path="/cloud-r2" element={<CloudR2 />} />

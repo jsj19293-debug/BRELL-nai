@@ -356,6 +356,7 @@
   "nav": {
     "reserve": "예약",
     "censor": "\uac80\uc5f4",
+    "fileTools": "\ud30c\uc77c",
     "prompts": "프롬프트",
     "folders": "폴더",
     "inbox": "알림",
