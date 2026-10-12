@@ -98,6 +98,18 @@ export function latestImagePerScene<Image extends { url: string; timestamp: numb
     return picks
 }
 
+/**
+ * 폴더의 이미지를 씬에 짝짓는다: 이미지 순서(이름순) 그대로 첫 장 ↔ 첫 씬, 둘째 장 ↔ 둘째 씬 …
+ * 이미지와 씬 중 적은 쪽 개수만큼만 짝짓는다.
+ */
+export function pairImagesWithScenes(
+    imagePaths: readonly string[],
+    scenes: ReadonlyArray<{ id: string }>,
+): Array<{ sceneId: string; path: string }> {
+    const count = Math.min(imagePaths.length, scenes.length)
+    return Array.from({ length: count }, (_, index) => ({ sceneId: scenes[index].id, path: imagePaths[index] }))
+}
+
 export type SceneI2iCyclePhase = 'idle' | 'first' | 'second'
 
 export interface SceneI2iCycleState<Entry = unknown> {

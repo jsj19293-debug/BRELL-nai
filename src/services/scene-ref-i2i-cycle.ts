@@ -22,6 +22,7 @@ import {
     idleCycleState,
     imageMimeForPath,
     latestImagePerScene,
+    pairImagesWithScenes,
     planSecondPass,
     recordFirstPass,
     shouldRunSecondPass,
@@ -93,7 +94,13 @@ export function startSceneI2iConvert(presetId: string): 'started' | 'busy' | 'qu
     const picks = preset ? latestImagePerScene(preset.scenes) : []
     if (picks.length === 0) return 'empty'
 
-    const sessionId = scenes.startNewGenerationSession()
+    startConvertSession(picks)
+    return 'started'
+}
+
+/** 고른 원본들로 I2I만 도는 세션을 시작한다 (예약 큐는 비어 있으므로 바로 2단계 실행부로 넘어간다). */
+function startConvertSession(picks: Array<{ sceneId: string; path: string }>): void {
+    const sessionId = useSceneStore.getState().startNewGenerationSession()
     convertSessionId = sessionId
     // 시드 0 = 따로 정하지 않음: 씬에 고정한 시드가 있으면 그것, 없으면 메인의 시드 설정을 따른다.
     cycle = {
@@ -103,7 +110,24 @@ export function startSceneI2iConvert(presetId: string): 'started' | 'busy' | 'qu
         records: picks.map(pick => ({ sceneId: pick.sceneId, path: pick.path, seed: 0, sequenceEntry: null })),
     }
     showPhase('second', 0, picks.length)
-    return 'started'
+}
+
+/**
+ * 검열 탭 "씬으로 I2I": 폴더의 이미지(이름순)를 고른 작품의 씬에 순서대로 짝지어,
+ * 각 이미지를 원본으로 그 씬의 프롬프트로 I2I를 한 장씩 만든다. 결과는 그 씬에 저장된다.
+ */
+export function startFolderI2iToScenes(presetId: string, imagePaths: readonly string[]): { outcome: 'started' | 'busy' | 'queued' | 'empty'; count: number } {
+    const scenes = useSceneStore.getState()
+    if (scenes.isGenerating) return { outcome: 'busy', count: 0 }
+    const preset = scenes.presets.find(candidate => candidate.id === presetId)
+    if (!preset) return { outcome: 'empty', count: 0 }
+    if (scenes.getTotalQueueCount(presetId) > 0) return { outcome: 'queued', count: 0 }
+    const picks = pairImagesWithScenes(imagePaths, preset.scenes)
+    if (picks.length === 0) return { outcome: 'empty', count: 0 }
+    // 생성은 지금 열린 작품 기준으로 돌아가므로 그 작품을 연다.
+    if (scenes.activePresetId !== presetId) scenes.setActivePreset(presetId)
+    startConvertSession(picks)
+    return { outcome: 'started', count: picks.length }
 }
 
 export type SecondPassOutcome = 'skipped' | 'done' | 'cancelled' | 'failed'

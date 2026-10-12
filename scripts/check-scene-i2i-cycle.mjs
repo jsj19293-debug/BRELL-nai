@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import {
     SCENE_I2I_DEFAULT_STRENGTH, beginCycle, bytesToDataUrl, clampSceneI2iNoise, clampSceneI2iStrength,
-    idleCycleState, imageMimeForPath, latestImagePerScene, planSecondPass, recordFirstPass, shouldRunSecondPass,
+    idleCycleState, imageMimeForPath, latestImagePerScene, pairImagesWithScenes, planSecondPass, recordFirstPass, shouldRunSecondPass,
 } from '../src/lib/scene-i2i-cycle.ts'
 
 // 변화 강도: 기본 0.58, 0.01~0.99, 소수 둘째 자리
@@ -93,5 +93,10 @@ assert.deepEqual(latestImagePerScene([
     assert.equal(shouldRunSecondPass(state, 7), true)
     assert.deepEqual(planSecondPass(state.records, [{ id: 'a' }, { id: 'b' }]).map(step => [step.scene.id, step.record.path, step.record.characterPromptIds]), [['a', 'C:/a/3.png', undefined]])
 }
+
+// 폴더 이미지 ↔ 씬 순서대로 짝짓기 (적은 쪽 개수만큼)
+assert.deepEqual(pairImagesWithScenes(['1.webp', '2.webp', '3.webp'], [{ id: 'a' }, { id: 'b' }]), [{ sceneId: 'a', path: '1.webp' }, { sceneId: 'b', path: '2.webp' }])
+assert.deepEqual(pairImagesWithScenes(['1.webp'], [{ id: 'a' }, { id: 'b' }]), [{ sceneId: 'a', path: '1.webp' }])
+assert.deepEqual(pairImagesWithScenes([], [{ id: 'a' }]), [])
 
 console.log('Scene reference → i2i cycle checks passed.')

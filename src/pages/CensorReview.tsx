@@ -4,12 +4,13 @@ import { convertFileSrc } from '@tauri-apps/api/core'
 import { join } from '@tauri-apps/api/path'
 import { open as openDialog } from '@tauri-apps/plugin-dialog'
 import { exists, mkdir, readFile, remove, writeFile } from '@tauri-apps/plugin-fs'
-import { ArrowLeft, ChevronLeft, ChevronRight, FolderOpen, FolderSearch, Loader2, RefreshCw, RotateCcw, Save, ShieldCheck, Undo2 } from 'lucide-react'
+import { ArrowLeft, ChevronLeft, ChevronRight, FolderOpen, FolderSearch, Loader2, RefreshCw, RotateCcw, Save, ShieldCheck, Undo2, WandSparkles } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Tip } from '@/components/ui/tooltip'
 import { toast } from '@/components/ui/use-toast'
 import { cn } from '@/lib/utils'
 import { CensorEditor, type CensorEditorHandle } from '@/components/censor/CensorEditor'
+import { CensorI2iDialog } from '@/components/censor/CensorI2iDialog'
 import { useCensorStore } from '@/stores/censor-store'
 import { listImageFiles, listWorkFolders, openFolder, resolveWorkRoot, type WorkFolder } from '@/lib/rell-folders'
 import { pathKey, type FolderFile } from '@/lib/scene-folder-sync'
@@ -71,6 +72,7 @@ export default function CensorReview() {
     const [reloadKey, setReloadKey] = useState(0)
     const [edited, setEdited] = useState(false)
     const [saving, setSaving] = useState(false)
+    const [i2iOpen, setI2iOpen] = useState(false)
     const editorRef = useRef<CensorEditorHandle>(null)
     const busyRef = useRef(false)
     const freshThumbsRef = useRef<Record<string, string>>({})
@@ -447,6 +449,12 @@ export default function CensorReview() {
                                     {t('censor.clearViewed', '확인 표시 지우기')}
                                 </Button>
                             </Tip>
+                            <Tip content={t('censorI2i.tip', '이 폴더의 이미지를 고른 작품의 씬에 순서대로 짝지어 그 씬의 프롬프트로 I2I')}>
+                                <Button variant="outline" size="sm" className="h-8" onClick={() => setI2iOpen(true)} disabled={files.length === 0} data-censor-i2i-open>
+                                    <WandSparkles className="mr-1.5 h-3.5 w-3.5" />
+                                    {t('censorI2i.button', '씬으로 I2I')}
+                                </Button>
+                            </Tip>
                             <Button variant="outline" size="sm" className="h-8" onClick={() => void openCensorFolder()}>
                                 <FolderOpen className="mr-1.5 h-3.5 w-3.5" />
                                 {t('censor.openCensorFolder', '검열본 폴더')}
@@ -491,6 +499,9 @@ export default function CensorReview() {
                     </>
                 )}
             </section>
+            {i2iOpen && (
+                <CensorI2iDialog open={i2iOpen} onOpenChange={setI2iOpen} folderName={folderName(folderPath)} imagePaths={files.map(file => file.path)} />
+            )}
         </div>
     )
 }
