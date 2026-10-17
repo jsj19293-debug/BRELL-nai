@@ -4,8 +4,9 @@ import { convertFileSrc } from '@tauri-apps/api/core'
 import { join } from '@tauri-apps/api/path'
 import { open as openDialog, save } from '@tauri-apps/plugin-dialog'
 import { exists, mkdir, readDir, readFile, writeFile } from '@tauri-apps/plugin-fs'
-import { ArrowDown, ArrowUp, Eraser, Film, FolderOpen, FolderSearch, GripVertical, ImagePlus, Loader2, Play, RotateCcw, Save, Trash2 } from 'lucide-react'
+import { ArrowDown, ArrowUp, Eraser, Film, FolderOpen, FolderSearch, GripVertical, ImagePlus, Loader2, Play, RotateCcw, Save, Trash2, FileCode2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { SvgStudio } from '@/components/files/SvgStudio'
 import { Input } from '@/components/ui/input'
 import { toast } from '@/components/ui/use-toast'
 import { cn } from '@/lib/utils'
@@ -16,7 +17,7 @@ import {
     STRIP_FOLDER_NAME, clampSeconds, commonParent, fileNameOf, isImageName, moveItem, relativeDir, stripOutputName,
 } from '@/lib/file-tools'
 
-type ToolTab = 'strip' | 'slideshow'
+type ToolTab = 'strip' | 'slideshow' | 'svg'
 const IMAGE_EXTENSIONS = ['png', 'jpg', 'jpeg', 'webp']
 
 const chip = (active: boolean) => cn(
@@ -691,6 +692,7 @@ export default function FileTools() {
     const tabs: Array<{ id: ToolTab; label: string; icon: typeof Eraser }> = [
         { id: 'strip', label: t('fileTools.strip.title', '메타데이터 제거'), icon: Eraser },
         { id: 'slideshow', label: t('fileTools.slideshow.title', '슬라이드쇼 WebP'), icon: Film },
+        { id: 'svg', label: t('svgStudio.title', 'SVG 편집'), icon: FileCode2 },
     ]
     return (
         <div className="flex h-full min-h-0 flex-col p-3" data-file-tools>
@@ -716,6 +718,7 @@ export default function FileTools() {
                 {/* 탭을 오가도 고른 파일과 설정이 남도록 둘 다 그려 두고 숨긴다. */}
                 <div className={cn('min-h-0 flex-1', tab === 'strip' ? 'flex' : 'hidden')}><StripTab /></div>
                 <div className={cn('min-h-0 flex-1', tab === 'slideshow' ? 'flex' : 'hidden')}><SlideshowTab /></div>
+                <div className={cn('min-h-0 flex-1', tab === 'svg' ? 'flex' : 'hidden')}><SvgStudio /></div>
             </section>
         </div>
     )

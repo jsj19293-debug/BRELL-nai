@@ -32,6 +32,7 @@
     "check:censor-review": "node --experimental-strip-types scripts/check-censor-review.mjs",
     "check:scene-loose-files": "node --experimental-strip-types scripts/check-scene-loose-files.mjs",
     "check:webp-anim": "node --experimental-strip-types scripts/check-webp-anim.mjs",
+    "check:svg-studio": "node --experimental-strip-types scripts/check-svg-studio.mjs",
     "check:installer-continuity": "node scripts/check-installer-continuity.mjs",
     "check:model-capabilities": "node --experimental-strip-types scripts/check-model-capabilities.mjs",
     "check:tokenizer": "node scripts/check-tokenizer.mjs",
