@@ -73,3 +73,37 @@ export const svgFileName = (name: string, extension: 'svg' | 'png') => {
     const base = (name.trim() || 'image').replace(/\.(svg|png)$/i, '').replace(/[<>:"/\\|?*]/g, '_')
     return `${base}.${extension}`
 }
+
+// ── SVG를 만들어 내는 워커 코드 (Cloudflare Worker 형식) ──
+
+/** 붙여넣은 것이 SVG가 아니라 SVG를 만들어 내는 워커 코드인지 */
+export function isWorkerCode(code: string): boolean {
+    const text = code.trimStart()
+    if (text.startsWith('<')) return false
+    return /export\s+default\s*\{[\s\S]*\bfetch\b/.test(code) || /export\s+default\s+\{/.test(code)
+}
+
+/** 워커 맨 위 주석에 적힌 예시 주소(?page=2, ?no=13421 …)를 꺼낸다. */
+export function workerExamples(code: string, limit = 10): string[] {
+    const found: string[] = []
+    for (const line of code.split('\n')) {
+        const comment = /^\s*\/\/(.*)$/.exec(line)
+        if (!comment) continue
+        for (const match of comment[1].matchAll(/(?:^|\s|\/)(\?[^\s]+)/g)) {
+            const example = match[1].replace(/[)\],.]+$/, '')
+            if (example.length > 1 && !found.includes(example)) found.push(example)
+            if (found.length >= limit) return found
+        }
+    }
+    return found
+}
+
+/** 워커에 보낼 요청 주소. "?a=1", "a=1", "/path?a=1", 전체 주소 모두 받는다. */
+export function workerRequestUrl(query: string): string {
+    const text = query.trim()
+    if (/^https?:\/\//i.test(text)) return text
+    if (!text) return 'https://worker.local/'
+    if (text.startsWith('/')) return `https://worker.local${text}`
+    if (text.startsWith('?')) return `https://worker.local/${text}`
+    return `https://worker.local/?${text}`
+}

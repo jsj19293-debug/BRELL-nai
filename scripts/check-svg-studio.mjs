@@ -22,3 +22,18 @@ assert.equal(svgFileName('logo.svg', 'png'), 'logo.png')
 assert.equal(svgFileName('', 'svg'), 'image.svg')
 assert.equal(svgFileName('a/b:c', 'svg'), 'a_b_c.svg')
 console.log('SVG studio checks passed.')
+{
+    const { isWorkerCode, workerExamples, workerRequestUrl } = await import('../src/lib/svg-studio.ts')
+    const worker = `// 목록\n//   https://주소/   기본\n//   ?page=2    2페이지\n//   ?best=1\n// ?no=13421  글\nconst a = "?not=comment"\nexport default {\n  async fetch(request) { return new Response('') }\n};`
+    assert.equal(isWorkerCode(worker), true)
+    assert.equal(isWorkerCode('<svg xmlns="http://www.w3.org/2000/svg"></svg>'), false)
+    assert.equal(isWorkerCode('<?xml version="1.0"?><svg/>'), false)
+    assert.equal(isWorkerCode('const x = 1'), false)
+    assert.deepEqual(workerExamples(worker), ['?page=2', '?best=1', '?no=13421'])
+    assert.equal(workerRequestUrl(''), 'https://worker.local/')
+    assert.equal(workerRequestUrl('?no=1'), 'https://worker.local/?no=1')
+    assert.equal(workerRequestUrl('no=1&best=1'), 'https://worker.local/?no=1&best=1')
+    assert.equal(workerRequestUrl('/a?b=1'), 'https://worker.local/a?b=1')
+    assert.equal(workerRequestUrl('https://x.dev/?p=2'), 'https://x.dev/?p=2')
+    console.log('SVG worker helper checks passed.')
+}

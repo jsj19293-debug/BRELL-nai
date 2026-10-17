@@ -2,12 +2,13 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { open as openDialog, save } from '@tauri-apps/plugin-dialog'
 import { readTextFile, writeFile, writeTextFile } from '@tauri-apps/plugin-fs'
-import { AlertTriangle, Copy, FileCode2, FolderOpen, ImageDown, Maximize2, RotateCcw, Save, Sparkles, ZoomIn, ZoomOut } from 'lucide-react'
+import { AlertTriangle, Copy, FileCode2, Loader2, Play, FolderOpen, ImageDown, Maximize2, RotateCcw, Save, Sparkles, ZoomIn, ZoomOut } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Tip } from '@/components/ui/tooltip'
 import { toast } from '@/components/ui/use-toast'
 import { cn } from '@/lib/utils'
-import { SVG_SAMPLE, previewDocument, svgFileName, svgSize, withExplicitSize, type SvgBackground } from '@/lib/svg-studio'
+import { SVG_SAMPLE, isWorkerCode, previewDocument, svgFileName, svgSize, withExplicitSize, workerExamples, workerRequestUrl, type SvgBackground } from '@/lib/svg-studio'
+import { runSvgWorker } from '@/lib/svg-worker-runner'
 
 const DRAFT_KEY = 'nightmare-svg-studio-draft'
 const readDraft = () => {
@@ -56,29 +57,75 @@ export function SvgStudio() {
     const [wrap, setWrap] = useState(true)
     const editorRef = useRef<HTMLTextAreaElement>(null)
 
-    const checked = useMemo(() => checkSvg(code), [code])
+    // SVG 대신 SVG를 만들어 내는 워커 코드를 붙여넣으면, 그 코드를 돌려서 나온 SVG를 보여 준다.
+    const workerMode = useMemo(() => isWorkerCode(code), [code])
+    const examples = useMemo(() => (workerMode ? workerExamples(code) : []), [code, workerMode])
+    const [query, setQuery] = useState('')
+    const [output, setOutput] = useState('')
+    const [workerError, setWorkerError] = useState('')
+    const [workerInfo, setWorkerInfo] = useState('')
+    const [running, setRunning] = useState(false)
+    const runSeq = useRef(0)
+
+    const runWorker = async (source: string, request: string) => {
+        const seq = ++runSeq.current
+        setRunning(true)
+        try {
+            const result = await runSvgWorker(source, workerRequestUrl(request))
+            if (seq !== runSeq.current) return
+            if (result.status >= 400 || !/svg|xml/i.test(result.contentType)) {
+                setWorkerError(`${result.status} · ${result.body.slice(0, 300) || result.contentType}`)
+                setWorkerInfo('')
+            } else {
+                setWorkerError('')
+                setOutput(result.body)
+                setWorkerInfo(`${result.status} · ${result.contentType.split(';')[0]}`)
+            }
+        } catch (error) {
+            if (seq !== runSeq.current) return
+            setWorkerError(String((error as Error)?.message || error).split('\n').slice(0, 3).join(' '))
+            setWorkerInfo('')
+        } finally {
+            if (seq === runSeq.current) setRunning(false)
+        }
+    }
+
+    // 워커 코드나 요청 주소가 바뀌면 잠깐 기다렸다가 다시 돌린다.
+    useEffect(() => {
+        if (!workerMode) return
+        const timer = window.setTimeout(() => { void runWorker(code, query) }, 400)
+        return () => window.clearTimeout(timer)
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [workerMode, code, query])
+
+    /** 미리보기 · 저장 · PNG 의 대상: 워커면 실행 결과, 아니면 입력한 SVG */
+    const svgSource = workerMode ? output : code
+    const checked = useMemo(() => checkSvg(svgSource), [svgSource])
 
     // 입력을 멈추면 바로 그린다 (문법이 맞을 때만 바꿔서, 쓰는 도중에 화면이 깨지지 않게).
     useEffect(() => {
         const timer = window.setTimeout(() => {
-            if (checked.ok) setShown(code)
+            if (checked.ok) setShown(svgSource)
             try { localStorage.setItem(DRAFT_KEY, code) } catch { /* 저장 못 해도 편집은 된다 */ }
         }, 120)
         return () => window.clearTimeout(timer)
-    }, [code, checked.ok])
+    }, [code, svgSource, checked.ok])
 
     const lineCount = useMemo(() => code.split('\n').length, [code])
     const shownSize = useMemo(() => { const result = checkSvg(shown); return { width: result.width || 300, height: result.height || 150 } }, [shown])
     const doc = useMemo(() => previewDocument(shown, background, zoom, fit, shownSize), [shown, background, zoom, fit, shownSize])
 
     const loadText = (text: string, name: string) => {
+        setQuery('')
+        setOutput('')
+        setWorkerError('')
         setCode(text)
         setFileName(name)
     }
 
     const handleOpen = async () => {
         try {
-            const path = await openDialog({ multiple: false, filters: [{ name: 'SVG', extensions: ['svg'] }] })
+            const path = await openDialog({ multiple: false, filters: [{ name: 'SVG · 워커', extensions: ['svg', 'js', 'mjs', 'txt'] }] })
             if (!path || typeof path !== 'string') return
             loadText(await readTextFile(path), path.split(/[\\/]/).pop() || 'image.svg')
         } catch (error) {
@@ -90,7 +137,7 @@ export function SvgStudio() {
         try {
             const path = await save({ defaultPath: svgFileName(fileName, 'svg'), filters: [{ name: 'SVG', extensions: ['svg'] }] })
             if (!path) return
-            await writeTextFile(path, code)
+            await writeTextFile(path, svgSource)
             setFileName(path.split(/[\\/]/).pop() || fileName)
             toast({ title: t('svgStudio.saved', 'SVG를 저장했어요'), description: path, variant: 'success' })
         } catch (error) {
@@ -102,7 +149,7 @@ export function SvgStudio() {
         if (!checked.ok) return
         const width = Math.max(1, Math.round(checked.width * scale))
         const height = Math.max(1, Math.round(checked.height * scale))
-        const url = URL.createObjectURL(new Blob([withExplicitSize(code, width, height)], { type: 'image/svg+xml' }))
+        const url = URL.createObjectURL(new Blob([withExplicitSize(svgSource, width, height)], { type: 'image/svg+xml' }))
         const canvas = document.createElement('canvas')
         try {
             const image = new Image()
@@ -149,7 +196,7 @@ export function SvgStudio() {
     }
 
     const handleDrop = async (event: React.DragEvent) => {
-        const file = Array.from(event.dataTransfer?.files ?? []).find(item => /\.svg$/i.test(item.name) || item.type === 'image/svg+xml')
+        const file = Array.from(event.dataTransfer?.files ?? []).find(item => /\.(svg|js|mjs|txt)$/i.test(item.name) || item.type === 'image/svg+xml')
         if (!file) return
         event.preventDefault()
         setDropping(false)
@@ -165,7 +212,7 @@ export function SvgStudio() {
         <div className="flex min-h-0 flex-1 flex-col gap-2 p-4" data-svg-studio>
             <div className="flex flex-wrap items-center gap-1.5">
                 <Button variant="outline" size="sm" className="h-8" onClick={() => void handleOpen()}><FolderOpen className="mr-1.5 h-3.5 w-3.5" />{t('svgStudio.open', '열기')}</Button>
-                <Button variant="outline" size="sm" className="h-8" onClick={() => void handleSaveSvg()} disabled={!code.trim()} data-svg-save><Save className="mr-1.5 h-3.5 w-3.5" />{t('svgStudio.saveSvg', 'SVG 저장')}</Button>
+                <Button variant="outline" size="sm" className="h-8" onClick={() => void handleSaveSvg()} disabled={!checked.ok} data-svg-save><Save className="mr-1.5 h-3.5 w-3.5" />{workerMode ? t('svgStudio.saveResult', '결과 SVG 저장') : t('svgStudio.saveSvg', 'SVG 저장')}</Button>
                 <Button variant="outline" size="sm" className="h-8" onClick={() => void handleExportPng(1)} disabled={!checked.ok}><ImageDown className="mr-1.5 h-3.5 w-3.5" />PNG</Button>
                 <Button variant="outline" size="sm" className="h-8" onClick={() => void handleExportPng(2)} disabled={!checked.ok}>PNG ×2</Button>
                 <Button variant="outline" size="sm" className="h-8" onClick={() => void handleCopy()} disabled={!code.trim()}><Copy className="mr-1.5 h-3.5 w-3.5" />{t('svgStudio.copy', '코드 복사')}</Button>
@@ -193,14 +240,44 @@ export function SvgStudio() {
                         spellCheck={false}
                         autoCorrect="off"
                         autoCapitalize="off"
-                        placeholder={t('svgStudio.placeholder', '<svg ...> 코드를 붙여넣거나, .svg 파일을 여기로 끌어다 놓으세요')}
+                        placeholder={t('svgStudio.placeholder2', '<svg ...> 코드나 SVG를 만드는 워커 코드(export default { fetch })를 붙여넣거나, .svg · .js 파일을 끌어다 놓으세요')}
                         className="min-h-0 flex-1 resize-none bg-transparent p-3 font-mono text-[13px] leading-5 outline-none"
                         style={{ tabSize: 2, whiteSpace: wrap ? 'pre-wrap' : 'pre', overflowWrap: wrap ? 'anywhere' : 'normal' }}
                         data-svg-input
                     />
-                    <div className={cn('flex items-center gap-2 border-t px-3 py-1.5 text-[11px]', checked.ok || !code.trim() ? 'border-border/40 text-muted-foreground' : 'border-red-500/40 bg-red-500/10 text-red-400')} data-svg-status>
-                        {checked.ok ? (
-                            <span>{t('svgStudio.ok', '정상')} · {checked.width} × {checked.height}{checked.viewBox ? ` · viewBox ${checked.viewBox}` : ''} · {t('svgStudio.lines', '{{n}}줄', { n: lineCount })} · {(new Blob([code]).size / 1024).toFixed(1)} KB</span>
+                    {workerMode && (
+                        <div className="space-y-1.5 border-t border-border/40 px-3 py-2" data-svg-worker>
+                            <div className="flex items-center gap-2">
+                                <span className="shrink-0 rounded bg-primary/15 px-1.5 py-0.5 text-[10px] font-semibold text-primary">{t('svgStudio.workerMode', '워커 코드')}</span>
+                                <input
+                                    value={query}
+                                    onChange={event => setQuery(event.target.value)}
+                                    onKeyDown={event => { if (event.key === 'Enter') void runWorker(code, query) }}
+                                    placeholder={t('svgStudio.queryPlaceholder', '요청 주소 (예: ?no=13421 · 비우면 기본 화면)')}
+                                    className="h-7 min-w-0 flex-1 rounded-md border border-border/60 bg-background px-2 font-mono text-xs outline-none focus:border-primary"
+                                    data-svg-query
+                                />
+                                <Button variant="outline" size="sm" className="h-7 px-2" onClick={() => void runWorker(code, query)} disabled={running}>
+                                    {running ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Play className="h-3.5 w-3.5" />}
+                                </Button>
+                            </div>
+                            {examples.length > 0 && (
+                                <div className="flex flex-wrap gap-1">
+                                    <button type="button" className={chip(query === '')} onClick={() => setQuery('')}>{t('svgStudio.default', '기본')}</button>
+                                    {examples.map(example => (
+                                        <button key={example} type="button" className={cn(chip(query === example), 'max-w-[14rem] truncate font-mono')} title={example} onClick={() => setQuery(example)} data-svg-example>{example}</button>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
+                    )}
+                    <div className={cn('flex items-center gap-2 border-t px-3 py-1.5 text-[11px]', (workerMode ? !workerError && (checked.ok || running) : checked.ok || !code.trim()) ? 'border-border/40 text-muted-foreground' : 'border-red-500/40 bg-red-500/10 text-red-400')} data-svg-status>
+                        {workerMode && workerError ? (
+                            <span className="flex min-w-0 items-center gap-1.5"><AlertTriangle className="h-3.5 w-3.5 shrink-0" /><span className="truncate" title={workerError}>{t('svgStudio.workerFailed', '워커 오류')}: {workerError}</span></span>
+                        ) : workerMode && !checked.ok ? (
+                            <span>{running ? t('svgStudio.running', '워커 실행 중…') : checked.error || t('svgStudio.noOutput', '결과가 없습니다')}</span>
+                        ) : checked.ok ? (
+                            <span>{workerMode ? `${t('svgStudio.workerOk', '워커 결과')} ${workerInfo} · ` : `${t('svgStudio.ok', '정상')} · `}{checked.width} × {checked.height}{checked.viewBox ? ` · viewBox ${checked.viewBox}` : ''} · {t('svgStudio.lines', '{{n}}줄', { n: lineCount })} · {(new Blob([svgSource]).size / 1024).toFixed(1)} KB</span>
                         ) : code.trim() ? (
                             <span className="flex min-w-0 items-center gap-1.5"><AlertTriangle className="h-3.5 w-3.5 shrink-0" /><span className="truncate" title={checked.error}>{checked.error}</span><span className="shrink-0 opacity-70">· {t('svgStudio.lastGood', '오른쪽은 마지막으로 맞았던 그림')}</span></span>
                         ) : (
