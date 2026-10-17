@@ -22,6 +22,7 @@ import {
     Folder,
     FolderOpen,
     FolderPlus,
+    FolderTree,
     ChevronRight,
     Save,
     Palette,
@@ -521,11 +522,13 @@ export function CharacterPromptPanel({ open, onOpenChange }: CharacterPromptPane
         }))
     }, [groups])
 
+    /** parentId: 넣을 상위 폴더. null 이면 맨 위(대폴더), 비우면 폴더 보기에서 고른 폴더 안 */
     const handleCreateGroup = (
-        parentId: string | undefined = expertCharacterPromptFolderBrowserEnabled
+        requestedParentId: string | null | undefined = expertCharacterPromptFolderBrowserEnabled
             ? selectedGroupId || undefined
             : undefined
     ) => {
+        const parentId = requestedParentId ?? undefined
         const baseName = t('characterPanel.newFolderName', '새폴더')
         const existingNames = groups.map(g => g.name)
         
@@ -541,6 +544,23 @@ export function CharacterPromptPanel({ open, onOpenChange }: CharacterPromptPane
         if (parentId) updateGroup(parentId, { collapsed: false })
         setSelectedGroupId(newGroupId)
         setEditingGroupId(newGroupId)
+        setEditingGroupName(newName)
+        return newGroupId
+    }
+
+    /** 대폴더로 묶기: 이 폴더와 같은 자리에 새 폴더를 만들고 그 안으로 이 폴더를 넣는다. 다른 폴더는 "폴더 이동"으로 더 넣으면 된다. */
+    const handleWrapInParent = (groupId: string) => {
+        const group = groups.find(candidate => candidate.id === groupId)
+        if (!group) return
+        const baseName = t('characterPanel.parentFolderName', '대폴더')
+        const existingNames = new Set(groups.map(candidate => candidate.name))
+        let newName = baseName
+        for (let counter = 2; existingNames.has(newName); counter++) newName = `${baseName}(${counter})`
+        const parentId = addGroup(newName, group.parentId)
+        moveGroup(groupId, parentId)
+        updateGroup(parentId, { collapsed: false })
+        setSelectedGroupId(parentId)
+        setEditingGroupId(parentId)
         setEditingGroupName(newName)
     }
 
@@ -897,6 +917,10 @@ export function CharacterPromptPanel({ open, onOpenChange }: CharacterPromptPane
                             <FolderPlus className="mr-2 h-4 w-4" />
                             {t('characterPanel.addSubfolder', '하위 폴더 추가')}
                         </ContextMenuItem>
+                        <ContextMenuItem onClick={() => handleWrapInParent(group.id)} data-wrap-parent>
+                            <FolderTree className="mr-2 h-4 w-4" />
+                            {t('characterPanel.wrapInParent', '대폴더로 묶기')}
+                        </ContextMenuItem>
                         <ContextMenuSub>
                             <ContextMenuSubTrigger>
                                 <Folder className="mr-2 h-4 w-4" />
@@ -1051,6 +1075,10 @@ export function CharacterPromptPanel({ open, onOpenChange }: CharacterPromptPane
                             <ContextMenuItem onClick={() => handleCreateGroup(group.id)}>
                                 <FolderPlus className="mr-2 h-4 w-4" />
                                 {t('characterPanel.addSubfolder', '하위 폴더 추가')}
+                            </ContextMenuItem>
+                            <ContextMenuItem onClick={() => handleWrapInParent(group.id)} data-wrap-parent>
+                                <FolderTree className="mr-2 h-4 w-4" />
+                                {t('characterPanel.wrapInParent', '대폴더로 묶기')}
                             </ContextMenuItem>
                             <ContextMenuSub>
                                 <ContextMenuSubTrigger>
@@ -1397,7 +1425,8 @@ export function CharacterPromptPanel({ open, onOpenChange }: CharacterPromptPane
                                     variant="ghost"
                                     size="icon"
                                     className="h-6 w-6"
-                                    onClick={() => handleCreateGroup()}
+                                    title={t('characterPanel.addTopFolder', '맨 위에 새 폴더 (대폴더) · 하위 폴더는 폴더 우클릭')}
+                                    onClick={() => handleCreateGroup(null)}
                                 >
                                     <FolderPlus className="h-3.5 w-3.5" />
                                 </Button>

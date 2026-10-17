@@ -1,5 +1,5 @@
 import { outputDirName } from '@/lib/storage-naming'
-import { useCallback, useEffect, useLayoutEffect, useRef, useState, type PointerEvent as ReactPointerEvent, type WheelEvent as ReactWheelEvent } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react'
 import { Circle, Download, Droplets, Eraser, Image as ImageIcon, Paintbrush, Redo, RotateCcw, Save as SaveIcon, Square, Undo, ZoomIn, ZoomOut } from 'lucide-react'
 import { save } from '@tauri-apps/plugin-dialog'
 import { BaseDirectory, exists, mkdir, writeFile } from '@tauri-apps/plugin-fs'
@@ -50,6 +50,8 @@ export function DrawOverDialog({ open, sourceImage, outputDirectory, fileNamePre
         pivotRatioY: number
     } | null>(null)
     const lastPointRef = useRef<{ x: number; y: number } | null>(null)
+    /** 이번 획에 쓰는 도구 (Shift 를 누르고 그리면 지우개) */
+    const strokeModeRef = useRef<DrawMode>('pen')
     const drawingRef = useRef(false)
     const panningRef = useRef(false)
     const panStartRef = useRef<{ x: number; y: number; scrollLeft: number; scrollTop: number } | null>(null)
@@ -255,7 +257,8 @@ export function DrawOverDialog({ open, sourceImage, outputDirectory, fileNamePre
         const ctx = canvas?.getContext('2d')
         if (!canvas || !ctx) return
 
-        if (mode === 'blur') {
+        const strokeMode = strokeModeRef.current
+        if (strokeMode === 'blur') {
             const distance = Math.hypot(to.x - from.x, to.y - from.y)
             const spacing = Math.max(2, brushSize / 5)
             const steps = Math.max(1, Math.ceil(distance / spacing))
@@ -267,8 +270,8 @@ export function DrawOverDialog({ open, sourceImage, outputDirectory, fileNamePre
         }
 
         ctx.save()
-        ctx.globalCompositeOperation = mode === 'eraser' ? 'destination-out' : 'source-over'
-        ctx.globalAlpha = mode === 'pen' ? opacity / 100 : 1
+        ctx.globalCompositeOperation = strokeMode === 'eraser' ? 'destination-out' : 'source-over'
+        ctx.globalAlpha = strokeMode === 'pen' ? opacity / 100 : 1
         if (brushShape === 'square') {
             ctx.fillStyle = color
             const distance = Math.hypot(to.x - from.x, to.y - from.y)
@@ -291,7 +294,7 @@ export function DrawOverDialog({ open, sourceImage, outputDirectory, fileNamePre
             ctx.stroke()
         }
         ctx.restore()
-    }, [brushShape, brushSize, color, drawBlurPoint, mode, opacity])
+    }, [brushShape, brushSize, color, drawBlurPoint, opacity])
 
     const updateBrushCursor = (event: ReactPointerEvent<HTMLCanvasElement>) => {
         const canvas = editCanvasRef.current
@@ -303,8 +306,9 @@ export function DrawOverDialog({ open, sourceImage, outputDirectory, fileNamePre
         cursor.style.height = `${brushSize * (rect.height / canvas.height)}px`
         cursor.style.transform = `translate(${event.clientX - rect.left}px, ${event.clientY - rect.top}px) translate(-50%, -50%)`
         cursor.style.borderRadius = brushShape === 'round' ? '9999px' : '0'
-        cursor.style.borderColor = mode === 'eraser' ? 'rgba(248, 113, 113, 0.95)' : 'rgba(255, 255, 255, 0.9)'
-        cursor.style.backgroundColor = mode === 'eraser' ? 'rgba(248, 113, 113, 0.1)' : 'rgba(99, 102, 241, 0.1)'
+        const erasing = mode === 'eraser' || event.shiftKey
+        cursor.style.borderColor = erasing ? 'rgba(248, 113, 113, 0.95)' : 'rgba(255, 255, 255, 0.9)'
+        cursor.style.backgroundColor = erasing ? 'rgba(248, 113, 113, 0.1)' : 'rgba(99, 102, 241, 0.1)'
         cursor.style.opacity = '1'
     }
 
@@ -313,7 +317,8 @@ export function DrawOverDialog({ open, sourceImage, outputDirectory, fileNamePre
     }
 
     const startPanning = (event: ReactPointerEvent<HTMLCanvasElement>) => {
-        if (event.button !== 1 || !containerRef.current) return false
+        // 휠 버튼 또는 Ctrl+왼쪽 버튼으로 끌면 화면 이동 (검열 탭과 같은 조작)
+        if (!(event.button === 1 || (event.button === 0 && (event.ctrlKey || event.metaKey))) || !containerRef.current) return false
         event.preventDefault()
         event.currentTarget.setPointerCapture(event.pointerId)
         panningRef.current = true
@@ -334,7 +339,8 @@ export function DrawOverDialog({ open, sourceImage, outputDirectory, fileNamePre
         if (!point) return
         event.currentTarget.setPointerCapture(event.pointerId)
         captureUndoSnapshot()
-        if (mode === 'blur') captureBlurSource()
+        strokeModeRef.current = event.shiftKey ? 'eraser' : mode
+        if (strokeModeRef.current === 'blur') captureBlurSource()
         drawingRef.current = true
         lastPointRef.current = point
         updateBrushCursor(event)
@@ -510,11 +516,59 @@ export function DrawOverDialog({ open, sourceImage, outputDirectory, fileNamePre
         hideBrushCursor()
     }
 
-    const handleZoomWheel = (event: ReactWheelEvent<HTMLDivElement>) => {
-        if (!event.ctrlKey) return
+    // 휠: 브러시 크기 / Ctrl+휠: 확대 · 축소 / Shift+휠: 스크롤 (검열 탭과 같은 조작)
+    const wheelRef = useRef<(event: WheelEvent) => void>(() => undefined)
+    wheelRef.current = (event: WheelEvent) => {
+        if (event.shiftKey || event.altKey || event.deltaY === 0) return
         event.preventDefault()
-        setZoomLevel(zoomRef.current + (event.deltaY < 0 ? 0.25 : -0.25), event)
+        const up = event.deltaY < 0
+        if (event.ctrlKey || event.metaKey) {
+            setZoomLevel(zoomRef.current + (up ? 0.25 : -0.25), event)
+            return
+        }
+        const step = brushSize >= 100 ? 10 : brushSize >= 40 ? 6 : 4
+        setBrushSize(Math.max(4, Math.min(240, brushSize + (up ? step : -step))))
     }
+    useEffect(() => {
+        if (!open) return
+        let container: HTMLDivElement | null = null
+        const listener = (event: WheelEvent) => wheelRef.current(event)
+        // 대화상자가 그려진 다음에 붙인다.
+        const frame = requestAnimationFrame(() => {
+            container = containerRef.current
+            container?.addEventListener('wheel', listener, { passive: false })
+        })
+        return () => {
+            cancelAnimationFrame(frame)
+            container?.removeEventListener('wheel', listener)
+        }
+    }, [open])
+
+    // Ctrl 을 누르고 있으면 손 모양 커서 (잡고 옮기기)
+    const [grabReady, setGrabReady] = useState(false)
+    useEffect(() => {
+        if (!open) return
+        const update = (event: KeyboardEvent) => setGrabReady(event.ctrlKey || event.metaKey)
+        const clear = () => setGrabReady(false)
+        window.addEventListener('keydown', update)
+        window.addEventListener('keyup', update)
+        window.addEventListener('blur', clear)
+        return () => {
+            window.removeEventListener('keydown', update)
+            window.removeEventListener('keyup', update)
+            window.removeEventListener('blur', clear)
+        }
+    }, [open])
+
+    // 브러시 크기나 배율이 바뀌면 커서 원 크기를 바로 맞춘다.
+    useEffect(() => {
+        const canvas = editCanvasRef.current
+        const cursor = brushCursorRef.current
+        if (!canvas || !cursor || canvas.width === 0) return
+        const rect = canvas.getBoundingClientRect()
+        cursor.style.width = `${brushSize * (rect.width / canvas.width)}px`
+        cursor.style.height = `${brushSize * (rect.height / canvas.height)}px`
+    }, [brushSize, zoom])
 
     const getOutputDataUrl = () => {
         const output = composeToCanvas()
@@ -570,6 +624,21 @@ export function DrawOverDialog({ open, sourceImage, outputDirectory, fileNamePre
             toast({ title: t('common.saveFailed'), variant: 'destructive' })
         }
     }
+
+    // Ctrl+S: 저장 (검열 탭과 같은 단축키)
+    const saveRef = useRef(handleSave)
+    saveRef.current = handleSave
+    useEffect(() => {
+        if (!open) return
+        const handleKey = (event: KeyboardEvent) => {
+            if ((event.ctrlKey || event.metaKey) && !event.shiftKey && event.key.toLowerCase() === 's') {
+                event.preventDefault()
+                void saveRef.current()
+            }
+        }
+        window.addEventListener('keydown', handleKey)
+        return () => window.removeEventListener('keydown', handleKey)
+    }, [open])
 
     const handleTransfer = (target: TransferMode) => {
         const dataUrl = getOutputDataUrl()
@@ -669,7 +738,7 @@ export function DrawOverDialog({ open, sourceImage, outputDirectory, fileNamePre
                     </Button>
                 </div>
 
-                <div ref={containerRef} className="relative min-h-0 flex-1 overflow-auto rounded-lg bg-muted/50 p-2" onWheel={handleZoomWheel}>
+                <div ref={containerRef} className="relative min-h-0 flex-1 overflow-auto rounded-lg bg-muted/50 p-2">
                     <div className="flex h-max min-h-full w-max min-w-full items-center justify-center">
                         {sourceImage && (
                             <div
@@ -684,7 +753,7 @@ export function DrawOverDialog({ open, sourceImage, outputDirectory, fileNamePre
                             <canvas ref={baseCanvasRef} className="block h-full w-full object-contain" />
                             <canvas
                                 ref={editCanvasRef}
-                                className="absolute inset-0 h-full w-full touch-none cursor-crosshair"
+                                className={cn('absolute inset-0 h-full w-full touch-none', grabReady ? 'cursor-grab' : 'cursor-crosshair')}
                                 onPointerDown={handlePointerDown}
                                 onPointerMove={handlePointerMove}
                                 onPointerUp={stopDrawing}

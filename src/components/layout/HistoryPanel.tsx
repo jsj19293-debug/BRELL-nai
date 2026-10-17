@@ -1,4 +1,4 @@
-import { saveSeedFromImage } from '@/services/seed-vault-service'
+import { lockSeedFromImage, saveSeedFromImage } from '@/services/seed-vault-service'
 import { outputDirName, sceneDirName } from '@/lib/storage-naming'
 import { isScenePath } from '@/lib/storage-names'
 import { useTranslation } from 'react-i18next'
@@ -79,6 +79,7 @@ interface HistoryImageItemProps {
     onI2I: (image: SavedImage) => void
     onDrawOver: (image: SavedImage) => void
     onSaveSeed: (image: SavedImage) => void
+    onLockSeed: (image: SavedImage) => void
     onOpenFolder: (image: SavedImage) => void
     onR2DirectUpload: (image: SavedImage) => void
     onLoadMetadata: (image: SavedImage) => void
@@ -89,7 +90,7 @@ interface HistoryImageItemProps {
 const HistoryImageItem = memo(function HistoryImageItem({
     image, thumbnail, index, getTypeIcon,
     onImageClick, onDelete, onSaveAs, onCopy, onRegenerate,
-    onOpenSmartTools, onOpenExifManager, onExifDirectAction, onAddAsReference, onInpaint, onI2I, onDrawOver, onSaveSeed, onOpenFolder, onR2DirectUpload, onLoadMetadata,
+    onOpenSmartTools, onOpenExifManager, onExifDirectAction, onAddAsReference, onInpaint, onI2I, onDrawOver, onSaveSeed, onLockSeed, onOpenFolder, onR2DirectUpload, onLoadMetadata,
     onLoadComplete, onMissing
 }: HistoryImageItemProps) {
     const [localThumbnail, setLocalThumbnail] = useState<string | undefined>(thumbnail)
@@ -207,6 +208,7 @@ const HistoryImageItem = memo(function HistoryImageItem({
                     onI2I={() => onI2I(image)}
                     onDrawOver={() => onDrawOver(image)}
                     onSaveSeed={() => onSaveSeed(image)}
+                    onLockSeed={() => onLockSeed(image)}
                     onAddReference={() => onAddAsReference(image)}
                     onLoadMetadata={() => onLoadMetadata(image)}
                     onOpenFolder={() => onOpenFolder(image)}
@@ -1130,6 +1132,12 @@ export function HistoryPanel() {
         await saveSeedFromImage(imageData, image.isTemporary ? undefined : image.path)
     }
 
+    const handleLockSeed = async (image: SavedImage) => {
+        let imageData: string
+        try { imageData = await getFullImageData(image) } catch { return }
+        await lockSeedFromImage(imageData, image.isTemporary ? undefined : image.path)
+    }
+
     const handleDrawOver = async (image: SavedImage) => {
         let imageData: string
         try { imageData = await getFullImageData(image) } catch { return }
@@ -1202,6 +1210,7 @@ export function HistoryPanel() {
                                 onI2I={handleI2I}
                                 onDrawOver={handleDrawOver}
                                 onSaveSeed={handleSaveSeed}
+                                onLockSeed={handleLockSeed}
                                 onOpenFolder={handleOpenFolder}
                                 onR2DirectUpload={handleR2DirectUpload}
                                 onLoadMetadata={handleLoadMetadata}

@@ -5,6 +5,7 @@ import {
 } from 'lucide-react'
 import { open as openDialog, save } from '@tauri-apps/plugin-dialog'
 import { WebSplitPanel } from '@/components/notes/WebSplitPanel'
+import { HighlightTextarea } from '@/components/notes/HighlightTextarea'
 import { readTextFile, writeTextFile } from '@tauri-apps/plugin-fs'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -81,10 +82,11 @@ function WorldTab({ project, onTranslate }: { project: PromptProject; onTranslat
                     <CopyButton text={project.world} label={t('notes.copy', '복사')} done={t('notes.world.copied', '세계관을 복사했어요')} />
                 </div>
             </div>
-            <Textarea
+            <HighlightTextarea
                 value={project.world}
                 onChange={event => setWorld(project.id, event.target.value)}
-                placeholder={t('notes.world.placeholder', '세계관을 적어 보세요 (최대 10,000자)')}
+                placeholder={t('notes.world.placeholder2', '세계관을 적어 보세요 (최대 10,000자) · # 제목, ## 소제목, {{user}} 는 색으로 구분됩니다')}
+                wrapperClassName="flex min-h-0 flex-1 flex-col"
                 className="min-h-0 flex-1 resize-none text-sm leading-relaxed"
                 spellCheck={false}
             />
@@ -257,7 +259,7 @@ function LoreTab({ project, onTranslate }: { project: PromptProject; onTranslate
 
                             <div className="mt-3 grid gap-1.5">
                                 <label className="text-xs font-medium text-muted-foreground">{t('notes.lore.content', '내용')}</label>
-                                <Textarea
+                                <HighlightTextarea
                                     value={entry.content}
                                     onChange={event => updateLore(project.id, entry.id, { content: clampChars(event.target.value, LORE_CONTENT_MAX_CHARS) })}
                                     placeholder={t('notes.lore.contentPlaceholder', '이 항목의 설정을 적어 보세요 (최대 500자)')}
@@ -379,10 +381,11 @@ function MemoTab({ project }: { project: PromptProject }) {
                             </Button>
                         </Tip>
                     </div>
-                    <Textarea
+                    <HighlightTextarea
                         value={selected.content}
                         onChange={event => updateMemo(project.id, selected.id, { content: clampChars(event.target.value, MEMO_MAX_CHARS) })}
                         placeholder={t('notes.memo.placeholder', '자유롭게 적어 두세요.')}
+                        wrapperClassName="flex min-h-0 flex-1 flex-col"
                         className="min-h-0 flex-1 resize-none text-sm leading-relaxed"
                         spellCheck={false}
                     />

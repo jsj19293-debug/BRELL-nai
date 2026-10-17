@@ -14,6 +14,7 @@ import {
     DragOverlay,
     defaultDropAnimationSideEffects,
     MeasuringStrategy,
+    useDroppable,
 } from '@dnd-kit/core'
 import {
     arrayMove,
@@ -62,9 +63,16 @@ import {
     Download,
     Edit3,
     X,
+    Search,
     CheckSquare,
     Square,
     FolderInput,
+    FolderPlus,
+    FolderClosed,
+    FolderOpen as FolderOpenIcon,
+    ChevronRight,
+    ArrowUp,
+    ArrowDown,
     ArrowRight,
     Upload,
     LayoutGrid,
@@ -83,6 +91,8 @@ import {
     Lock,
 } from 'lucide-react'
 import { SceneSeedLockDialog } from '@/components/scene/SceneSeedLockDialog'
+import { useSceneFolderStore } from '@/stores/scene-folder-store'
+import { groupPresets, type ScenePresetFolder } from '@/lib/scene-preset-folders'
 import { cn } from '@/lib/utils'
 import { useNearViewport } from '@/hooks/use-near-viewport'
 import { useSceneQueueCount, useSceneQueueHasItems } from '@/hooks/use-scene-queue'
@@ -196,11 +206,14 @@ const dropAnimation = {
     }),
 }
 
-function SortablePresetDropdownRow({ preset, isActive, disabled, onSelect, t }: {
+function SortablePresetDropdownRow({ preset, isActive, disabled, onSelect, folders, folderId, onMoveToFolder, t }: {
     preset: ScenePreset
     isActive: boolean
     disabled: boolean
     onSelect: () => void
+    folders: ScenePresetFolder[]
+    folderId: string | null
+    onMoveToFolder: (folderId: string | null) => void
     t: any
 }) {
     const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: preset.id })
@@ -241,6 +254,79 @@ function SortablePresetDropdownRow({ preset, isActive, disabled, onSelect, t }: 
                 <span className="text-xs text-muted-foreground">{preset.scenes.length}</span>
                 {isActive && <Check className="h-4 w-4 shrink-0 text-primary" />}
             </button>
+            {folders.length > 0 && (
+                <DropdownMenuSub>
+                    <DropdownMenuSubTrigger className="h-8 w-7 shrink-0 justify-center px-0 text-muted-foreground [&>svg:last-child]:hidden" title={t('scene.folders.moveTo', '폴더로 옮기기')} data-preset-move>
+                        <FolderInput className="h-3.5 w-3.5" />
+                    </DropdownMenuSubTrigger>
+                    <DropdownMenuSubContent className="max-h-72 w-48 overflow-y-auto">
+                        <DropdownMenuItem disabled={folderId === null} onSelect={() => onMoveToFolder(null)}>
+                            {t('scene.folders.none', '폴더 밖으로')}
+                        </DropdownMenuItem>
+                        {folders.map(folder => (
+                            <DropdownMenuItem key={folder.id} disabled={folder.id === folderId} onSelect={() => onMoveToFolder(folder.id)} data-preset-move-target>
+                                <FolderClosed className="mr-2 h-3.5 w-3.5" />
+                                <span className="truncate">{folder.name}</span>
+                            </DropdownMenuItem>
+                        ))}
+                    </DropdownMenuSubContent>
+                </DropdownMenuSub>
+            )}
+        </div>
+    )
+}
+
+/** 작품 정리 폴더의 머리줄. 작품을 끌어다 놓으면 이 폴더로 들어간다. */
+function PresetFolderHeader({ folder, count, disabled, onToggle, onRename, onDelete, onMove, t }: {
+    folder: ScenePresetFolder | null
+    count: number
+    disabled: boolean
+    onToggle: () => void
+    onRename: (name: string) => void
+    onDelete: () => void
+    onMove: (delta: -1 | 1) => void
+    t: any
+}) {
+    const { setNodeRef, isOver } = useDroppable({ id: `preset-folder:${folder?.id ?? 'none'}` })
+    const [editing, setEditing] = useState(false)
+    const [name, setName] = useState(folder?.name ?? '')
+    if (!folder) {
+        return (
+            <div ref={setNodeRef} className={cn('mt-1 flex h-7 items-center gap-1.5 rounded-md px-2 text-[11px] text-muted-foreground', isOver && 'bg-primary/15 text-foreground')}>
+                {t('scene.folders.loose', '폴더 없음')} <span className="tabular-nums">{count}</span>
+            </div>
+        )
+    }
+    return (
+        <div ref={setNodeRef} className={cn('group/folder flex h-8 items-center gap-1 rounded-lg px-1 text-sm', isOver ? 'bg-primary/15' : 'hover:bg-accent/60')} data-preset-folder={folder.name}>
+            <button type="button" className="flex min-w-0 flex-1 items-center gap-1.5 text-left" onClick={onToggle} onDoubleClick={() => { setName(folder.name); setEditing(true) }}>
+                <ChevronRight className={cn('h-3.5 w-3.5 shrink-0 transition-transform', !folder.collapsed && 'rotate-90')} />
+                {folder.collapsed ? <FolderClosed className="h-4 w-4 shrink-0 text-amber-400" /> : <FolderOpenIcon className="h-4 w-4 shrink-0 text-amber-400" />}
+                {editing ? (
+                    <Input
+                        autoFocus
+                        value={name}
+                        onChange={event => setName(event.target.value)}
+                        onClick={event => event.stopPropagation()}
+                        onKeyDown={event => {
+                            event.stopPropagation()
+                            if (event.key === 'Enter') { onRename(name); setEditing(false) }
+                            if (event.key === 'Escape') setEditing(false)
+                        }}
+                        onBlur={() => { onRename(name); setEditing(false) }}
+                        className="h-6 min-w-0 flex-1 px-1.5 text-xs"
+                    />
+                ) : (
+                    <span className="min-w-0 flex-1 truncate font-medium">{folder.name}</span>
+                )}
+                <span className="shrink-0 text-xs tabular-nums text-muted-foreground">{count}</span>
+            </button>
+            <div className="flex shrink-0 items-center opacity-0 transition-opacity group-hover/folder:opacity-100">
+                <button type="button" className="flex h-6 w-6 items-center justify-center rounded text-muted-foreground hover:text-foreground" title={t('scene.folders.rename', '이름 변경 (더블클릭)')} onClick={() => { setName(folder.name); setEditing(true) }} disabled={disabled}><Pencil className="h-3 w-3" /></button>
+                <button type="button" className="flex h-6 w-6 items-center justify-center rounded text-muted-foreground hover:text-foreground" title={t('scene.folders.up', '위로')} onClick={() => onMove(-1)}><ArrowUp className="h-3 w-3" /></button>
+                <button type="button" className="flex h-6 w-6 items-center justify-center rounded text-muted-foreground hover:text-foreground" title={t('scene.folders.down', '아래로')} onClick={() => onMove(1)}><ArrowDown className="h-3 w-3" /></button>
+                <button type="button" className="flex h-6 w-6 items-center justify-center rounded text-muted-foreground hover:text-destructive" title={t('scene.folders.delete', '폴더 지우기 (안의 작품은 남음)')} onClick={onDelete} disabled={disabled}><Trash2 className="h-3 w-3" /></button>
+            </div>
         </div>
     )
 }
@@ -275,13 +361,37 @@ function ScenePresetDropdown({
         useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
     )
 
+    const folders = useSceneFolderStore(state => state.folders)
+    const assignment = useSceneFolderStore(state => state.assignment)
+    const folderActions = useSceneFolderStore.getState()
+    const groups = useMemo(() => groupPresets(presets, folders, assignment), [presets, folders, assignment])
+    const folderOf = (presetId: string): string | null => {
+        const folderId = assignment[presetId]
+        return folderId && folders.some(folder => folder.id === folderId) ? folderId : null
+    }
+
+    // 같은 폴더 안에서 끌면 순서 바꾸기, 다른 폴더의 작품이나 폴더 머리줄에 놓으면 그 폴더로 옮기기
     const handleDragEnd = (event: DragEndEvent) => {
         const { active, over } = event
-        if (over && active.id !== over.id) {
-            const oldIndex = presets.findIndex(p => p.id === active.id)
-            const newIndex = presets.findIndex(p => p.id === over.id)
-            onReorder(oldIndex, newIndex)
+        if (!over || active.id === over.id) return
+        const activeId = String(active.id)
+        const overId = String(over.id)
+        if (overId.startsWith('preset-folder:')) {
+            const target = overId.slice('preset-folder:'.length)
+            folderActions.setPresetFolder(activeId, target === 'none' ? null : target)
+            return
         }
+        const targetFolder = folderOf(overId)
+        if (folderOf(activeId) !== targetFolder) folderActions.setPresetFolder(activeId, targetFolder)
+        const oldIndex = presets.findIndex(p => p.id === activeId)
+        const newIndex = presets.findIndex(p => p.id === overId)
+        if (oldIndex >= 0 && newIndex >= 0) onReorder(oldIndex, newIndex)
+    }
+
+    const addFolder = () => {
+        const id = folderActions.addFolder(t('scene.folders.newName', '새 폴더'))
+        // 지금 열린 작품을 새 폴더에 바로 넣어 둔다 (원하면 다시 빼면 된다).
+        if (activePresetId && !folderOf(activePresetId)) folderActions.setPresetFolder(activePresetId, id)
     }
 
     const activePreset = presets.find(preset => preset.id === activePresetId)
@@ -290,26 +400,65 @@ function ScenePresetDropdown({
         <DropdownMenu open={open} onOpenChange={onOpenChange}>
             <DropdownMenuTrigger asChild>
                 <Button variant="outline" className="h-10 w-[220px] justify-between rounded-xl border-white/10 bg-transparent px-3 font-normal" disabled={disabled}>
-                    <span className="truncate">{activePreset?.name || t('scene.preset')}</span>
+                    <span className="flex min-w-0 items-center gap-1.5">
+                        {activePresetId && assignment[activePresetId] && folders.some(folder => folder.id === assignment[activePresetId]) && (
+                            <span className="max-w-[5rem] shrink-0 truncate rounded bg-amber-400/15 px-1 text-[10px] text-amber-300">{folders.find(folder => folder.id === assignment[activePresetId])?.name}</span>
+                        )}
+                        <span className="truncate">{activePreset?.name || t('scene.preset')}</span>
+                    </span>
                     <ChevronDown className="h-4 w-4 shrink-0 opacity-50" />
                 </Button>
             </DropdownMenuTrigger>
-            <DropdownMenuContent align="start" className="max-h-[420px] w-[220px] overflow-y-auto p-1">
+            <DropdownMenuContent align="start" className="max-h-[480px] w-[280px] overflow-y-auto p-1" data-preset-dropdown>
+                <div className="mb-1 flex items-center justify-between px-1">
+                    <span className="text-[11px] text-muted-foreground">{t('scene.folders.hint', '작품을 끌어서 폴더에 넣을 수 있어요')}</span>
+                    <button type="button" className="flex h-7 items-center gap-1 rounded-md px-2 text-xs text-muted-foreground hover:bg-accent hover:text-foreground" onClick={addFolder} disabled={disabled} data-preset-add-folder>
+                        <FolderPlus className="h-3.5 w-3.5" />
+                        {t('scene.folders.add', '폴더')}
+                    </button>
+                </div>
                 <DndContext sensors={sensors} collisionDetection={pointerWithin} onDragEnd={handleDragEnd} modifiers={[restrictToVerticalAxis, restrictToParentElement]}>
-                    <SortableContext items={presets.map(p => p.id)} strategy={verticalListSortingStrategy}>
-                        <div className="space-y-0.5">
-                            {presets.map(preset => (
-                                <SortablePresetDropdownRow
-                                    key={preset.id}
-                                    preset={preset}
-                                    isActive={activePresetId === preset.id}
-                                    disabled={disabled}
-                                    onSelect={() => onSelect(preset.id)}
-                                    t={t}
-                                />
-                            ))}
-                        </div>
-                    </SortableContext>
+                    <div className="space-y-0.5">
+                        {groups.map(group => {
+                            const hidden = group.folder?.collapsed
+                            if (!group.folder && folders.length === 0) {
+                                // 폴더를 쓰지 않으면 예전처럼 한 줄 목록
+                                return (
+                                    <SortableContext key="none" items={group.presets.map(p => p.id)} strategy={verticalListSortingStrategy}>
+                                        {group.presets.map(preset => (
+                                            <SortablePresetDropdownRow key={preset.id} preset={preset} isActive={activePresetId === preset.id} disabled={disabled} onSelect={() => onSelect(preset.id)} folders={folders} folderId={null} onMoveToFolder={folderId => folderActions.setPresetFolder(preset.id, folderId)} t={t} />
+                                        ))}
+                                    </SortableContext>
+                                )
+                            }
+                            return (
+                                <div key={group.folder?.id ?? 'none'}>
+                                    <PresetFolderHeader
+                                        folder={group.folder}
+                                        count={group.presets.length}
+                                        disabled={disabled}
+                                        onToggle={() => group.folder && folderActions.toggleFolder(group.folder.id)}
+                                        onRename={name => group.folder && folderActions.renameFolder(group.folder.id, name)}
+                                        onDelete={() => group.folder && folderActions.deleteFolder(group.folder.id)}
+                                        onMove={delta => group.folder && folderActions.moveFolder(group.folder.id, delta)}
+                                        t={t}
+                                    />
+                                    {!hidden && (
+                                        <SortableContext items={group.presets.map(p => p.id)} strategy={verticalListSortingStrategy}>
+                                            <div className={cn('space-y-0.5', group.folder && 'ml-3 border-l border-border/40 pl-1')}>
+                                                {group.presets.map(preset => (
+                                                    <SortablePresetDropdownRow key={preset.id} preset={preset} isActive={activePresetId === preset.id} disabled={disabled} onSelect={() => onSelect(preset.id)} folders={folders} folderId={group.folder?.id ?? null} onMoveToFolder={folderId => folderActions.setPresetFolder(preset.id, folderId)} t={t} />
+                                                ))}
+                                                {group.folder && group.presets.length === 0 && (
+                                                    <p className="px-2 py-1 text-[11px] text-muted-foreground">{t('scene.folders.empty', '비어 있음 · 작품을 끌어다 놓으세요')}</p>
+                                                )}
+                                            </div>
+                                        </SortableContext>
+                                    )}
+                                </div>
+                            )
+                        })}
+                    </div>
                 </DndContext>
                 <DropdownMenuSeparator />
                 <div className="flex items-center gap-2 p-1">
@@ -349,6 +498,8 @@ export default function SceneMode() {
     const activePreset = useSceneStore(s => s.presets.find(p => p.id === s.activePresetId))
     const scenes = activePreset?.scenes || []
     const [sceneSearch, setSceneSearch] = useState('')
+    // 도구 모음이 좁으면 검색 칸이 찌그러져 빈 네모처럼 보여서, 평소엔 돋보기 버튼만 두고 누르면 칸을 연다.
+    const [sceneSearchOpen, setSceneSearchOpen] = useState(false)
     const searchTerm = sceneSearch.trim().toLocaleLowerCase()
     const visibleScenes = useMemo(() => searchTerm
         ? scenes.filter(scene => scene.name.toLocaleLowerCase().includes(searchTerm))
@@ -1045,12 +1196,23 @@ export default function SceneMode() {
                                 </Button>
                             </Tip>
                         )}
-                        <div className="flex min-w-0 items-center gap-1">
-                            <Input value={sceneSearch} onChange={event => setSceneSearch(event.target.value)}
-                                placeholder={t('scene.searchByName')} aria-label={t('scene.searchByName')}
-                                className="h-8 w-44 min-w-0" />
+                        <div className="flex shrink-0 items-center gap-1">
+                            {sceneSearchOpen || sceneSearch ? (
+                                <Input value={sceneSearch} onChange={event => setSceneSearch(event.target.value)}
+                                    autoFocus
+                                    onBlur={() => { if (!sceneSearch) setSceneSearchOpen(false) }}
+                                    onKeyDown={event => { if (event.key === 'Escape') { setSceneSearch(''); setSceneSearchOpen(false) } }}
+                                    placeholder={t('scene.searchByName')} aria-label={t('scene.searchByName')}
+                                    className="h-8 w-40 shrink-0" data-scene-search />
+                            ) : (
+                                <Tip content={t('scene.searchByName')}>
+                                    <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0" aria-label={t('scene.searchByName')} onClick={() => setSceneSearchOpen(true)} data-scene-search-open>
+                                        <Search className="h-4 w-4" />
+                                    </Button>
+                                </Tip>
+                            )}
                             {sceneSearch && <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0"
-                                aria-label={t('scene.clearSearch')} onClick={() => setSceneSearch('')}><X className="h-4 w-4" /></Button>}
+                                aria-label={t('scene.clearSearch')} onClick={() => { setSceneSearch(''); setSceneSearchOpen(false) }}><X className="h-4 w-4" /></Button>}
                             {searchTerm && <span className="shrink-0 whitespace-nowrap text-xs text-muted-foreground">{visibleScenes.length} / {scenes.length}</span>}
                         </div>
                     </div>

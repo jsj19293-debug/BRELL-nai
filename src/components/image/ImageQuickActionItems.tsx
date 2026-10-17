@@ -1,4 +1,4 @@
-import { Brush, Cloud, Copy, Eraser, FileSearch, FolderOpen, Image as ImageIcon, Paintbrush, RotateCcw, Save, Sprout, Users, Wand2 } from 'lucide-react'
+import { Brush, Cloud, Copy, Eraser, FileSearch, FolderOpen, Image as ImageIcon, Paintbrush, RotateCcw, Lock, Save, Sprout, Users, Wand2 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { ContextMenuItem, ContextMenuSeparator } from '@/components/ui/context-menu'
 import { useSettingsStore } from '@/stores/settings-store'
@@ -16,6 +16,8 @@ interface ImageQuickActionItemsProps {
     onDrawOver?: () => void
     /** 현재 시드값 저장 (시드 보관함) */
     onSaveSeed?: () => void
+    /** 현재 시드값 고정 */
+    onLockSeed?: () => void
     onAddReference?: () => void
     onLoadMetadata?: () => void
     onOpenFolder?: () => void
@@ -35,6 +37,7 @@ export function ImageQuickActionItems({
     onI2I,
     onDrawOver,
     onSaveSeed,
+    onLockSeed,
     onAddReference,
     onLoadMetadata,
     onOpenFolder,
@@ -48,7 +51,7 @@ export function ImageQuickActionItems({
     const hasFileActions = Boolean(onSaveAs || onCopy || onRegenerate)
     const hasExifActions = showExifDirectAction || showExifQuickAction
     const hasPrimaryActions = Boolean(onOpenSmartTools)
-    const hasEditorActions = Boolean(onInpaint || onI2I || onDrawOver || onSaveSeed)
+    const hasEditorActions = Boolean(onInpaint || onI2I || onDrawOver || onSaveSeed || onLockSeed)
     const hasToolActions = hasPrimaryActions || hasEditorActions
     const hasReferenceActions = Boolean(onAddReference || onLoadMetadata || onOpenFolder)
 
@@ -67,6 +70,7 @@ export function ImageQuickActionItems({
             {onInpaint && <ContextMenuItem onClick={onInpaint}><Paintbrush className="mr-2 h-4 w-4 text-pink-400" />{t('tools.inpainting.title')}</ContextMenuItem>}
             {onDrawOver && <ContextMenuItem onClick={onDrawOver}><Brush className="mr-2 h-4 w-4 text-lime-400" />{t('smartTools.drawOver')}</ContextMenuItem>}
             {onSaveSeed && <ContextMenuItem onClick={onSaveSeed} data-save-seed><Sprout className="mr-2 h-4 w-4 text-emerald-400" />{t('seedVault.saveCurrent', '현재 시드값 저장')}</ContextMenuItem>}
+            {onLockSeed && <ContextMenuItem onClick={onLockSeed} data-lock-seed><Lock className="mr-2 h-4 w-4 text-red-400" />{t('seedVault.lockCurrent', '현재 시드값 고정')}</ContextMenuItem>}
 
             {hasToolActions && hasReferenceActions && <ContextMenuSeparator />}
             {onAddReference && <ContextMenuItem onClick={onAddReference}><Users className="mr-2 h-4 w-4 text-emerald-400" />{t('actions.addAsRef')}</ContextMenuItem>}

@@ -2,6 +2,9 @@ import i18n from '@/i18n'
 import { toast } from '@/components/ui/use-toast'
 import { parseMetadataFromBase64 } from '@/lib/metadata-parser'
 import { useSeedVaultStore } from '@/stores/seed-vault-store'
+import { useGenerationStore } from '@/stores/generation-store'
+import { useSceneStore } from '@/stores/scene-store'
+import { findSceneImageOwner } from '@/lib/scene-path'
 
 const THUMBNAIL_SIZE = 320
 
@@ -33,6 +36,41 @@ function makeThumbnail(dataUrl: string): Promise<string | undefined> {
  * @param dataUrl 이미지 내용 (data URL)
  * @param imagePath 이미지 파일 위치 (저장된 파일일 때)
  */
+/**
+ * 우클릭 메뉴 "현재 시드값 고정": 이미지의 시드를 고정한다.
+ * 씬 이미지면 그 씬에만 고정(씬 카드 테두리가 빨갛게), 그 밖의 이미지면 메인 시드에 넣고 잠근다.
+ */
+export async function lockSeedFromImage(dataUrl: string, imagePath?: string): Promise<void> {
+    const t = i18n.t.bind(i18n)
+    try {
+        const metadata = await parseMetadataFromBase64(dataUrl)
+        const seed = metadata?.seed
+        if (typeof seed !== 'number' || !Number.isFinite(seed) || seed <= 0) {
+            toast({
+                title: t('seedVault.noSeed', '이 이미지에서 시드값을 찾지 못했어요'),
+                description: t('seedVault.noSeedHelp', 'EXIF(생성 정보)가 지워진 이미지는 시드를 알 수 없습니다.'),
+                variant: 'destructive',
+            })
+            return
+        }
+        const scenes = useSceneStore.getState()
+        const owner = findSceneImageOwner(scenes.presets, imagePath)
+        if (owner) {
+            scenes.setSceneFixedSeed(owner.presetId, owner.sceneId, seed)
+            const sceneName = scenes.presets.find(preset => preset.id === owner.presetId)?.scenes.find(scene => scene.id === owner.sceneId)?.name ?? ''
+            toast({ title: t('seedVault.lockedScene', '"{{name}}" 씬을 이 시드로 고정했어요', { name: sceneName }), description: String(seed), variant: 'success' })
+            return
+        }
+        const generation = useGenerationStore.getState()
+        generation.setSeed(seed)
+        generation.setSeedLocked(true)
+        toast({ title: t('seedVault.lockedMain', '메인 시드를 이 시드로 고정했어요'), description: String(seed), variant: 'success' })
+    } catch (error) {
+        console.error('Failed to lock seed:', error)
+        toast({ title: t('seedVault.lockFailed', '시드를 고정하지 못했어요'), description: String(error), variant: 'destructive' })
+    }
+}
+
 export async function saveSeedFromImage(dataUrl: string, imagePath?: string): Promise<void> {
     const t = i18n.t.bind(i18n)
     try {

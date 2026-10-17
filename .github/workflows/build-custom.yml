@@ -52,6 +52,8 @@ jobs:
           npm run check:scene-loose-files
           npm run check:webp-anim
           npm run check:svg-studio
+          npm run check:note-highlight
+          npm run check:scene-preset-folders
           npm run check:shortcuts
           npm run check:installer-continuity
 

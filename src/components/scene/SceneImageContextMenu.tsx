@@ -20,7 +20,7 @@ import { SceneR2DirectUploadDialog, UploadCandidate } from '@/components/scene/S
 import { useExifStore } from '@/stores/exif-store'
 import { bytesToImageDataUrl } from '@/lib/exif-stripper'
 import { processAndSaveExifImage } from '@/lib/exif-actions'
-import { saveSeedFromImage } from '@/services/seed-vault-service'
+import { lockSeedFromImage, saveSeedFromImage } from '@/services/seed-vault-service'
 import { ImageQuickActionItems } from '@/components/image/ImageQuickActionItems'
 
 interface SceneContextMenuProps {
@@ -206,6 +206,12 @@ export function SceneImageContextMenu({ image, children, onDelete, onRegenerate,
         await saveSeedFromImage(base64, isFile ? image.url : undefined)
     }
 
+    const handleLockSeed = async () => {
+        const base64 = await getImageBase64()
+        if (!base64) return
+        await lockSeedFromImage(base64, isFile ? image.url : undefined)
+    }
+
     const handleDelete = async () => {
         if (isFile) {
             try {
@@ -238,6 +244,7 @@ export function SceneImageContextMenu({ image, children, onDelete, onRegenerate,
                     onI2I={handleI2I}
                     onDrawOver={handleDrawOver}
                     onSaveSeed={handleSaveSeed}
+                    onLockSeed={handleLockSeed}
                     onAddReference={onAddRef}
                     onLoadMetadata={onLoadMetadata}
                     onOpenFolder={isFile ? handleOpenFolder : undefined}

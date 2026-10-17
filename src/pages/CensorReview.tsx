@@ -93,7 +93,15 @@ export default function CensorReview() {
         }
     }, [])
 
+    /** 이미지가 없는 폴더를 열었을 때 보여 줄 하위 폴더들 (이미지가 든 폴더로 바로 들어갈 수 있게) */
+    const [subfolders, setSubfolders] = useState<WorkFolder[]>([])
+    const [missing, setMissing] = useState(false)
+    const loadSeq = useRef(0)
     const loadFolder = useCallback(async (path: string) => {
+        // 폴더를 빨리 바꾸면 늦게 끝난 이전 폴더의 결과가 덮어쓰지 않게 마지막 요청만 반영한다.
+        const seq = ++loadSeq.current
+        setSubfolders([])
+        setMissing(false)
         if (!path) {
             setFiles([])
             setCensoredNames(new Set())
@@ -102,15 +110,24 @@ export default function CensorReview() {
         setLoading(true)
         try {
             const [originals, censored] = await listImageFiles([path, await censorFolderOf(path)])
-            setFiles(sortByName(originals?.files ?? []))
+            if (seq !== loadSeq.current) return
+            const found = sortByName(originals?.files ?? [])
+            setFiles(found)
             setCensoredNames(new Set((censored?.files ?? []).map(file => file.name.toLowerCase())))
+            setMissing(originals ? !originals.exists : true)
+            if (found.length === 0 && originals?.exists) {
+                const children = await listWorkFolders(path).catch(() => [] as WorkFolder[])
+                if (seq !== loadSeq.current) return
+                setSubfolders(children.filter(child => child.name !== CENSOR_FOLDER_NAME))
+            }
         } catch (error) {
+            if (seq !== loadSeq.current) return
             console.error('Failed to read the folder:', error)
             setFiles([])
             setCensoredNames(new Set())
             toast({ title: t('censor.loadFailed', '폴더를 읽지 못했어요'), description: String(error), variant: 'destructive' })
         } finally {
-            setLoading(false)
+            if (seq === loadSeq.current) setLoading(false)
         }
     }, [censorFolderOf, t])
 
@@ -301,7 +318,14 @@ export default function CensorReview() {
     const chooseFolder = async () => {
         try {
             const selected = await openDialog({ directory: true, multiple: false, defaultPath: folderPath || undefined })
-            if (selected && typeof selected === 'string') setFolderPath(selected)
+            if (!selected || typeof selected !== 'string') return
+            // 같은 폴더를 다시 골라도 새로 읽는다.
+            if (pathKey(selected) === folderKey) {
+                setIndex(null)
+                void loadFolder(selected)
+            } else {
+                setFolderPath(selected)
+            }
         } catch (error) {
             toast({ title: t('censor.loadFailed', '폴더를 읽지 못했어요'), description: String(error), variant: 'destructive' })
         }
@@ -465,9 +489,24 @@ export default function CensorReview() {
                         </div>
                         <div className="min-h-0 flex-1 overflow-y-auto p-3">
                             {files.length === 0 ? (
-                                <p className="py-16 text-center text-sm text-muted-foreground">
-                                    {loading ? t('censor.loading', '읽는 중…') : t('censor.empty', '이 폴더에 이미지가 없습니다.')}
-                                </p>
+                                <div className="py-16 text-center text-sm text-muted-foreground" data-censor-empty>
+                                    <p>
+                                        {loading ? t('censor.loading', '읽는 중…')
+                                            : missing ? t('censor.missing', '폴더를 찾을 수 없습니다. 옮겨졌거나 이름이 바뀌었을 수 있어요.')
+                                                : t('censor.empty', '이 폴더에 이미지가 없습니다.')}
+                                    </p>
+                                    {!loading && subfolders.length > 0 && (
+                                        <div className="mx-auto mt-4 grid max-w-xl gap-1.5 text-left">
+                                            <p className="text-xs">{t('censor.subfolders', '안에 있는 폴더를 눌러 바로 열 수 있어요')}</p>
+                                            {subfolders.map(child => (
+                                                <button key={child.path} type="button" data-censor-subfolder onClick={() => setFolderPath(child.path)} className="flex items-center justify-between rounded-lg border border-border/60 px-3 py-2 text-sm text-foreground transition-colors hover:bg-muted/50">
+                                                    <span className="truncate">{child.name}</span>
+                                                    <span className="shrink-0 text-xs text-muted-foreground">{t('folders.imageCount', '이미지 {{n}}장', { n: child.imageCount })}</span>
+                                                </button>
+                                            ))}
+                                        </div>
+                                    )}
+                                </div>
                             ) : (
                                 <div className="grid gap-2.5" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(9.5rem, 1fr))' }}>
                                     {files.map((file, fileIndex) => {

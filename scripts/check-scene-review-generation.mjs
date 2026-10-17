@@ -64,7 +64,7 @@ assert.match(r2UploadSource, /const key = `\$\{prefix\}\$\{uploadFileNames\[inde
 assert.match(r2UploadSource, /const current = await listR2Objects\(config, prefix\)/)
 assert.doesNotMatch(reviewDialogSource, /<DrawOverDialog/)
 assert.match(sceneContextMenuSource, /openDrawOver\(base64, isFile \? image\.url : undefined\)/)
-assert.match(drawOverDialogSource, /outputDirectory \|\| savePath \|\| 'NAIS_Output'/)
+assert.match(drawOverDialogSource, /outputDirectory \|\| savePath \|\| outputDirName\(\)/)
 assert.match(drawOverDialogSource, /fileName = `\$\{fileNamePrefix\}_\$\{Date\.now\(\)\}\.png`/)
 assert.match(drawOverHostSource, /getSceneFolderFromImages\(\[\{ url: request\.sourcePath \}\]\)/)
 assert.match(drawOverHostSource, /findSceneImageOwner\(useSceneStore\.getState\(\)\.presets, request\?\.sourcePath\)/)

@@ -1,4 +1,4 @@
-import { saveSeedFromImage } from '@/services/seed-vault-service'
+import { lockSeedFromImage, saveSeedFromImage } from '@/services/seed-vault-service'
 import { outputDirName } from '@/lib/storage-naming'
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { useShallow } from 'zustand/react/shallow'
@@ -546,6 +546,7 @@ export default function MainMode() {
                                 onI2I={handleI2I}
                                 onDrawOver={handleDrawOver}
                                 onSaveSeed={() => { if (previewImage) void saveSeedFromImage(previewImage) }}
+                                onLockSeed={() => { if (previewImage) void lockSeedFromImage(previewImage) }}
                                 onAddReference={handleAddAsReference}
                                 onLoadMetadata={handleLoadMetadata}
                                 onOpenFolder={handleOpenFolder}
