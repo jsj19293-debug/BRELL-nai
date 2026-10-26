@@ -85,13 +85,15 @@ export function countSceneI2iConvertTargets(presetId: string | null): number {
  * "I2I로 변형": 레퍼런스를 썼든 안 썼든, 씬마다 가장 최근 이미지 1장을 원본으로 삼아 레퍼런스 없는 I2I를 한 장씩 만든다.
  * 새로 1단계를 뽑지 않고, 평소의 2단계(I2I) 실행부를 그대로 쓴다: 취소 · 진행 표시 · 저장 폴더 규칙이 같다.
  */
-export function startSceneI2iConvert(presetId: string): 'started' | 'busy' | 'queued' | 'empty' {
+/** sceneIds 를 주면 그 씬들만 (씬 순서대로) 변형한다. */
+export function startSceneI2iConvert(presetId: string, sceneIds?: readonly string[]): 'started' | 'busy' | 'queued' | 'empty' {
     const scenes = useSceneStore.getState()
     if (scenes.isGenerating || scenes.activePresetId !== presetId) return 'busy'
     // 예약이 남아 있으면 그것부터 새로 뽑게 되므로 섞이지 않게 막는다.
     if (scenes.getTotalQueueCount(presetId) > 0) return 'queued'
     const preset = scenes.presets.find(candidate => candidate.id === presetId)
-    const picks = preset ? latestImagePerScene(preset.scenes) : []
+    const wanted = sceneIds ? new Set(sceneIds) : null
+    const picks = preset ? latestImagePerScene(preset.scenes).filter(pick => !wanted || wanted.has(pick.sceneId)) : []
     if (picks.length === 0) return 'empty'
 
     startConvertSession(picks)

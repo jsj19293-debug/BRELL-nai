@@ -1,7 +1,8 @@
 // 씬 모드 도구 모음: "레퍼런스 → i2i" 자동 싸이클 스위치와 설정.
 import { useTranslation } from 'react-i18next'
 import { useState } from 'react'
-import { Repeat2, SlidersHorizontal, WandSparkles } from 'lucide-react'
+import { ListChecks, Repeat2, SlidersHorizontal, WandSparkles } from 'lucide-react'
+import { SceneI2iPickDialog } from '@/components/scene/SceneI2iPickDialog'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { Switch } from '@/components/ui/switch'
@@ -28,6 +29,7 @@ export function SceneRefI2iCycleControl({ isGenerating }: { isGenerating: boolea
 
     const activePresetId = useSceneStore(state => state.activePresetId)
     const [convertCount, setConvertCount] = useState<number | null>(null)
+    const [pickOpen, setPickOpen] = useState(false)
 
     // "I2I로 변형": 씬마다 가장 최근 이미지 1장을 I2I로 한 번씩 돌린다.
     const askConvert = () => {
@@ -65,6 +67,13 @@ export function SceneRefI2iCycleControl({ isGenerating }: { isGenerating: boolea
                 {t('sceneI2iCycle.convert', 'I2I로 변형')}
             </Button>
         </Tip>
+        <Tip content={t('sceneI2iPick.tip', '변형할 씬을 하나씩 체크해서, 고른 씬만 I2I로 변형')}>
+            <Button variant="outline" className="h-10 rounded-xl border-white/10 bg-white/5 px-3 text-xs" disabled={isGenerating || !activePresetId} onClick={() => setPickOpen(true)} data-scene-i2i-pick-open>
+                <ListChecks className="mr-1.5 h-4 w-4" />
+                {t('sceneI2iPick.button', '씬 골라 I2I')}
+            </Button>
+        </Tip>
+        {pickOpen && <SceneI2iPickDialog open={pickOpen} onOpenChange={setPickOpen} />}
         <ConfirmDialog
             open={convertCount !== null}
             onOpenChange={(open: boolean) => { if (!open) setConvertCount(null) }}
