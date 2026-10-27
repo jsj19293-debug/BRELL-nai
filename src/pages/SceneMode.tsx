@@ -191,6 +191,8 @@ import { Switch } from '@/components/ui/switch'
 import { useSettingsStore } from '@/stores/settings-store'
 import { SceneCharacterSequenceDialog } from '@/components/scene/SceneCharacterSequenceDialog'
 import { SceneRefI2iCycleControl } from '@/components/scene/SceneRefI2iCycleControl'
+import { SceneJobDoneDialog } from '@/components/scene/SceneJobDoneDialog'
+import { PackageCheck } from 'lucide-react'
 import { SceneCharacterAdditionDialog } from '@/components/scene/SceneCharacterAdditionDialog'
 import { SceneR2DirectUploadDialog } from '@/components/scene/SceneR2DirectUploadDialog'
 import { SceneReviewDialog } from '@/components/scene/SceneReviewDialog'
@@ -790,6 +792,7 @@ export default function SceneMode() {
 
     const [showExportDialog, setShowExportDialog] = useState(false)
     const [showWebpExportDialog, setShowWebpExportDialog] = useState(false)
+    const [showJobDoneDialog, setShowJobDoneDialog] = useState(false)
     // 예약대형으로 만든 프리셋은 예약 탭에서 본다. 씬 모드 목록에는 넣지 않는다 (지금 열려 있는 경우만 예외).
     const visiblePresets = useMemo(
         () => presets.filter(preset => !preset.characterAsset?.reservation || preset.id === activePresetId),
@@ -1107,6 +1110,18 @@ export default function SceneMode() {
                                 disabled={!activePreset || scenes.length === 0 || isGenerating}
                             >
                                 WebP
+                            </Button>
+                        </Tip>
+                        <Tip content={t('jobDone.tip', '작업완료하기 · 작품 폴더의 결과물을 지정한 폴더로 모으고 씬 폴더를 비웁니다')}>
+                            <Button
+                                variant="ghost"
+                                className="h-8 shrink-0 px-2 text-[11px] font-bold text-muted-foreground hover:text-foreground"
+                                onClick={() => setShowJobDoneDialog(true)}
+                                disabled={!activePreset || isGenerating}
+                                data-job-done-open
+                            >
+                                <PackageCheck className="mr-1 h-3.5 w-3.5" />
+                                {t('jobDone.button', '작업완료')}
                             </Button>
                         </Tip>
                         {characterProgress && (
@@ -1438,6 +1453,9 @@ export default function SceneMode() {
                 )}
             </div>
 
+            {showJobDoneDialog && activePresetId && (
+                <SceneJobDoneDialog open={showJobDoneDialog} onOpenChange={setShowJobDoneDialog} presetId={activePresetId} />
+            )}
             {activePreset && (
                 <SceneWebpExportDialog
                     open={showWebpExportDialog}
