@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { convertFileSrc } from '@tauri-apps/api/core'
-import { join } from '@tauri-apps/api/path'
+import { dirname, join } from '@tauri-apps/api/path'
 import { open as openDialog } from '@tauri-apps/plugin-dialog'
 import { exists, mkdir, readFile, remove, writeFile } from '@tauri-apps/plugin-fs'
 import { ArrowLeft, ChevronLeft, ChevronRight, FolderOpen, FolderSearch, Loader2, RefreshCw, RotateCcw, Save, ShieldCheck, Undo2, WandSparkles } from 'lucide-react'
@@ -93,14 +93,15 @@ export default function CensorReview() {
         }
     }, [])
 
-    /** 이미지가 없는 폴더를 열었을 때 보여 줄 하위 폴더들 (이미지가 든 폴더로 바로 들어갈 수 있게) */
-    const [subfolders, setSubfolders] = useState<WorkFolder[]>([])
     const [missing, setMissing] = useState(false)
     const loadSeq = useRef(0)
+    /**
+     * 폴더의 이미지를 읽는다. 바로 아래 하위 폴더(씬 폴더 등)의 이미지도 한 목록으로 함께 띄운다.
+     * 하위 폴더 이미지의 이름은 "하위폴더/파일" 이고, 검열본은 맨 위 "검열본" 폴더 안에 같은 하위 폴더 구조로 저장한다.
+     */
     const loadFolder = useCallback(async (path: string) => {
         // 폴더를 빨리 바꾸면 늦게 끝난 이전 폴더의 결과가 덮어쓰지 않게 마지막 요청만 반영한다.
         const seq = ++loadSeq.current
-        setSubfolders([])
         setMissing(false)
         if (!path) {
             setFiles([])
@@ -109,17 +110,28 @@ export default function CensorReview() {
         }
         setLoading(true)
         try {
-            const [originals, censored] = await listImageFiles([path, await censorFolderOf(path)])
+            const censorRoot = await censorFolderOf(path)
+            const [originals, censored] = await listImageFiles([path, censorRoot])
             if (seq !== loadSeq.current) return
-            const found = sortByName(originals?.files ?? [])
-            setFiles(found)
-            setCensoredNames(new Set((censored?.files ?? []).map(file => file.name.toLowerCase())))
-            setMissing(originals ? !originals.exists : true)
-            if (found.length === 0 && originals?.exists) {
-                const children = await listWorkFolders(path).catch(() => [] as WorkFolder[])
+            const folderExists = !!originals?.exists
+            const children = folderExists
+                ? (await listWorkFolders(path).catch(() => [] as WorkFolder[])).filter(child => child.name !== CENSOR_FOLDER_NAME)
+                : []
+            if (seq !== loadSeq.current) return
+            const found: FolderFile[] = [...(originals?.files ?? [])]
+            const censoredKeys = new Set((censored?.files ?? []).map(file => file.name.toLowerCase()))
+            if (children.length > 0) {
+                const childCensor = await Promise.all(children.map(child => join(censorRoot, child.name)))
+                const listed = await listImageFiles([...children.map(child => child.path), ...childCensor])
                 if (seq !== loadSeq.current) return
-                setSubfolders(children.filter(child => child.name !== CENSOR_FOLDER_NAME))
+                children.forEach((child, childIndex) => {
+                    for (const file of listed[childIndex]?.files ?? []) found.push({ ...file, name: `${child.name}/${file.name}` })
+                    for (const file of listed[children.length + childIndex]?.files ?? []) censoredKeys.add(`${child.name}/${file.name}`.toLowerCase())
+                })
             }
+            setFiles(sortByName(found))
+            setCensoredNames(censoredKeys)
+            setMissing(!folderExists)
         } catch (error) {
             if (seq !== loadSeq.current) return
             console.error('Failed to read the folder:', error)
@@ -156,7 +168,7 @@ export default function CensorReview() {
         void (async () => {
             try {
                 const output = censorOutput(current.name)
-                const censoredPath = await join(await censorFolderOf(folderPath), output.name)
+                const censoredPath = await join(await censorFolderOf(folderPath), ...output.name.split('/'))
                 const useCensored = censoredNames.has(output.name.toLowerCase())
                 const bytes = await loadBytes(useCensored ? censoredPath : current.path)
                 if (cancelled) return
@@ -189,7 +201,7 @@ export default function CensorReview() {
                 const file = files[neighbour]
                 if (!file || cancelled) continue
                 const output = censorOutput(file.name)
-                const path = censoredNames.has(output.name.toLowerCase()) ? await join(folder, output.name) : file.path
+                const path = censoredNames.has(output.name.toLowerCase()) ? await join(folder, ...output.name.split('/')) : file.path
                 void loadBytes(path).catch(() => undefined)
             }
         })()
@@ -207,9 +219,9 @@ export default function CensorReview() {
             const bytes = await editorRef.current?.exportIfEdited(output.mime) ?? null
             if (bytes) {
                 setSaving(true)
-                const folder = await censorFolderOf(folderPath)
+                const savedPath = await join(await censorFolderOf(folderPath), ...output.name.split('/'))
+                const folder = await dirname(savedPath)
                 if (!(await exists(folder))) await mkdir(folder, { recursive: true })
-                const savedPath = await join(folder, output.name)
                 await writeFile(savedPath, bytes)
                 bytesCache.current.delete(savedPath)
                 const key = output.name.toLowerCase()
@@ -262,7 +274,7 @@ export default function CensorReview() {
         if (!current || !folderPath || busyRef.current) return
         try {
             const output = censorOutput(current.name)
-            const path = await join(await censorFolderOf(folderPath), output.name)
+            const path = await join(await censorFolderOf(folderPath), ...output.name.split('/'))
             if (await exists(path)) await remove(path)
             bytesCache.current.delete(path)
             const key = output.name.toLowerCase()
@@ -345,7 +357,7 @@ export default function CensorReview() {
         const fresh = freshThumbs[output.name.toLowerCase()]
         if (fresh) return fresh
         const separator = folderPath.includes('\\') ? '\\' : '/'
-        return convertFileSrc(`${folderPath.replace(/[\\/]+$/, '')}${separator}${CENSOR_FOLDER_NAME}${separator}${output.name}`)
+        return convertFileSrc(`${folderPath.replace(/[\\/]+$/, '')}${separator}${CENSOR_FOLDER_NAME}${separator}${output.name.replace(/[\\/]/g, separator)}`)
     }
 
     const listedCurrent = workFolders.some(folder => pathKey(folder.path) === folderKey)
@@ -495,17 +507,6 @@ export default function CensorReview() {
                                             : missing ? t('censor.missing', '폴더를 찾을 수 없습니다. 옮겨졌거나 이름이 바뀌었을 수 있어요.')
                                                 : t('censor.empty', '이 폴더에 이미지가 없습니다.')}
                                     </p>
-                                    {!loading && subfolders.length > 0 && (
-                                        <div className="mx-auto mt-4 grid max-w-xl gap-1.5 text-left">
-                                            <p className="text-xs">{t('censor.subfolders', '안에 있는 폴더를 눌러 바로 열 수 있어요')}</p>
-                                            {subfolders.map(child => (
-                                                <button key={child.path} type="button" data-censor-subfolder onClick={() => setFolderPath(child.path)} className="flex items-center justify-between rounded-lg border border-border/60 px-3 py-2 text-sm text-foreground transition-colors hover:bg-muted/50">
-                                                    <span className="truncate">{child.name}</span>
-                                                    <span className="shrink-0 text-xs text-muted-foreground">{t('folders.imageCount', '이미지 {{n}}장', { n: child.imageCount })}</span>
-                                                </button>
-                                            ))}
-                                        </div>
-                                    )}
                                 </div>
                             ) : (
                                 <div className="grid gap-2.5" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(9.5rem, 1fr))' }}>
