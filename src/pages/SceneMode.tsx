@@ -1072,9 +1072,9 @@ export default function SceneMode() {
                     </div>
                 </div>
             ) : (
-                /* Normal Header */
-                <div className="flex items-center justify-between gap-3">
-                    <div className="flex min-w-0 items-center gap-2">
+                /* Normal Header: 폭이 모자라면 겹치지 않고 오른쪽 묶음이 다음 줄로 내려간다 */
+                <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2" data-scene-toolbar>
+                    <div className="flex min-w-0 flex-wrap items-center gap-2">
                         <h1 className="sr-only">{t('scene.title')}</h1>
                         <Tip content={t('scene.openPresetFolder')}>
                             <Button
@@ -1216,7 +1216,7 @@ export default function SceneMode() {
                             {searchTerm && <span className="shrink-0 whitespace-nowrap text-xs text-muted-foreground">{visibleScenes.length} / {scenes.length}</span>}
                         </div>
                     </div>
-                    <div className="flex shrink-0 items-center gap-2">
+                    <div className="flex min-w-0 flex-wrap items-center justify-end gap-2">
                         <Tip content={t('scene.reviewImages')}>
                             <Button variant="ghost" size="icon" className="h-9 w-9 text-muted-foreground hover:text-foreground hover:bg-white/10" onClick={() => setShowReviewDialog(true)} disabled={!scenes.some(scene => scene.images.length > 0)}>
                                 <ImageIcon className="h-4 w-4" />
