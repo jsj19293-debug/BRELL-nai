@@ -173,7 +173,7 @@ const SceneQueueControls = memo(function SceneQueueControls({ activePresetId, sc
 })
 
 import { Tip } from '@/components/ui/tooltip'
-import { useSceneStore, type SceneImage, type ScenePreset } from '@/stores/scene-store'
+import { resolveSceneCharacterAddition, useSceneStore, type SceneImage, type ScenePreset } from '@/stores/scene-store'
 import { useGenerationStore } from '@/stores/generation-store'
 import { toast } from '@/components/ui/use-toast'
 import { convertFileSrc, invoke } from '@tauri-apps/api/core'
@@ -1597,7 +1597,7 @@ const SceneCardItem = memo(function SceneCardItem({ scene, onClick, disabled = f
     const sceneCharacterAddition = useSceneStore(s => {
         const presetId = s.activePresetId
         if (!presetId) return null
-        return s.sceneCharacterAdditions[presetId]?.[scene.id] || null
+        return resolveSceneCharacterAddition(s, presetId, scene.id)
     })
     
     // Streaming State - only this card's streaming state

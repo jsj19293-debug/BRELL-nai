@@ -138,6 +138,7 @@ export function planCharacterAssetPresets<Scene extends AssetScene, Preset exten
                 scenes: source.scenes.map((scene, sceneIndex) => ({
                     ...scene,
                     id: `${presetId}-scene-${sceneIndex}`,
+                    sourceSceneId: scene.id,
                     images: [],
                     queueCount,
                     folderPath: undefined,

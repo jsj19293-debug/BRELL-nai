@@ -48,7 +48,7 @@ const getThumbnailAspectClass = (layout: 'vertical' | 'horizontal' | 'square') =
     return 'aspect-[3/2]'
 }
 
-import { useSceneStore, SceneImage } from '@/stores/scene-store'
+import { resolveSceneCharacterAddition, useSceneStore, SceneImage } from '@/stores/scene-store'
 import { useSettingsStore } from '@/stores/settings-store'
 import { Command } from '@tauri-apps/plugin-shell'
 import { MetadataDialog } from '@/components/metadata/MetadataDialog'
@@ -77,7 +77,7 @@ export default function SceneDetail() {
     })
     const sceneCharacterAddition = useSceneStore(state => {
         if (!state.activePresetId || !sceneId) return null
-        return state.sceneCharacterAdditions[state.activePresetId]?.[sceneId] || null
+        return resolveSceneCharacterAddition(state, state.activePresetId, sceneId)
     })
     const sceneCharacterAdditionsEnabled = useSceneStore(state => state.sceneCharacterAdditionsEnabled)
 

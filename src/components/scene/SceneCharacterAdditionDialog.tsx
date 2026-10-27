@@ -13,7 +13,7 @@ import { Checkbox } from '@/components/ui/checkbox'
 import { Badge } from '@/components/ui/badge'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { cn } from '@/lib/utils'
-import { useSceneStore, SceneCharacterAddition, SceneCharacterAdditionMode } from '@/stores/scene-store'
+import { resolveSceneCharacterAddition, useSceneStore, SceneCharacterAddition, SceneCharacterAdditionMode } from '@/stores/scene-store'
 import { useCharacterPromptStore, CharacterPrompt, FOLDER_COLORS } from '@/stores/character-prompt-store'
 import { useCharacterStore, ReferenceImage } from '@/stores/character-store'
 
@@ -55,7 +55,7 @@ export function SceneCharacterAdditionDialog({ open, onOpenChange, presetId, sce
     })
     const addition = useSceneStore(s => {
         if (!presetId || !sceneId) return null
-        return s.sceneCharacterAdditions[presetId]?.[sceneId] || null
+        return resolveSceneCharacterAddition(s, presetId, sceneId)
     })
     const updateAddition = useSceneStore(s => s.updateSceneCharacterAddition)
     const clearAddition = useSceneStore(s => s.clearSceneCharacterAddition)

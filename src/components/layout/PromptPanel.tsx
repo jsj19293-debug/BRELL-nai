@@ -46,7 +46,7 @@ import {
 } from 'lucide-react'
 import { ShareCardDialog } from '@/components/image/ShareCardDialog'
 import { useGenerationStore, AVAILABLE_MODELS } from '@/stores/generation-store'
-import { useSceneStore } from '@/stores/scene-store'
+import { resolveSceneCharacterAddition, useSceneStore } from '@/stores/scene-store'
 import { useSettingsStore } from '@/stores/settings-store'
 import { useCharacterPromptStore } from '@/stores/character-prompt-store'
 import { removePromptComments } from '@/lib/prompt-comments'
@@ -107,7 +107,7 @@ export function PromptPanel() {
     })
     const sceneCharacterAddition = useSceneStore(state => {
         if (!routeSceneId || !state.activePresetId) return null
-        return state.sceneCharacterAdditions[state.activePresetId]?.[routeSceneId] || null
+        return resolveSceneCharacterAddition(state, state.activePresetId, routeSceneId)
     })
     const sceneCharacterAdditionsEnabled = useSceneStore(state => state.sceneCharacterAdditionsEnabled)
     const sceneHasQueue = useSceneQueueHasItems(activePresetId)

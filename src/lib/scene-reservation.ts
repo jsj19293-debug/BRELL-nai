@@ -219,6 +219,7 @@ export function planReservation<Scene extends AssetScene, Preset extends AssetPr
                 return {
                     ...scene,
                     id: `${presetId}-scene-${sceneIndex}`,
+                    sourceSceneId: scene.id,
                     images: [],
                     queueCount: 1,
                     folderPath: joinPath(firstPassRoot, folderName),

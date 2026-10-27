@@ -39,6 +39,8 @@ export interface SceneMultiCharacterSlot {
 export interface SceneCard {
     id: string
     name: string
+    /** 캐릭터씬 · 예약대형으로 복제한 씬이면 원본 작품의 씬 id (씬 설정을 원본에서 이어받는다) */
+    sourceSceneId?: string
     scenePrompt: string
     sceneNegativePrompt?: string
     queueCount: number  // Number of images to generate
@@ -425,6 +427,39 @@ const createDefaultPreset = (): ScenePreset => ({
     scenes: [],
     createdAt: Date.now(),
 })
+
+/**
+ * 씬의 캐릭터 설정(의상 켜고 끄기 · 추가 캐릭터 · 변형 등).
+ * 캐릭터씬 · 예약대형으로 복제한 씬은 자기 설정이 없으면 원본 작품의 같은 씬 설정을 그대로 따른다.
+ */
+export function resolveSceneCharacterAddition(
+    state: { presets: ScenePreset[]; sceneCharacterAdditions: Record<string, Record<string, SceneCharacterAddition>> },
+    presetId: string | null | undefined,
+    sceneId: string | null | undefined,
+): SceneCharacterAddition | null {
+    if (!presetId || !sceneId) return null
+    const own = state.sceneCharacterAdditions[presetId]?.[sceneId]
+    if (own) return own
+    const preset = state.presets.find(candidate => candidate.id === presetId)
+    const parentId = preset?.characterAsset?.parentPresetId
+    const parent = parentId ? state.presets.find(candidate => candidate.id === parentId) : undefined
+    if (!preset || !parent) return null
+    const scene = preset.scenes.find(candidate => candidate.id === sceneId)
+    if (!scene) return null
+    let sourceId = scene.sourceSceneId
+    if (!sourceId) {
+        // 예전에 만든 복제본: "…-scene-번호" 의 번호 자리 씬, 이름이 다르면 같은 이름의 씬
+        const match = /-scene-(\d+)$/.exec(sceneId)
+        const index = match ? Number(match[1]) : preset.scenes.indexOf(scene)
+        const byIndex = parent.scenes[index]
+        if (byIndex && byIndex.name === scene.name) sourceId = byIndex.id
+        else {
+            const byName = parent.scenes.filter(candidate => candidate.name === scene.name)
+            sourceId = byName.length === 1 ? byName[0].id : byIndex?.id
+        }
+    }
+    return sourceId ? state.sceneCharacterAdditions[parent.id]?.[sourceId] ?? null : null
+}
 
 export const useSceneStore = create<SceneState>()(
     persist(

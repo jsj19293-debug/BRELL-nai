@@ -1,6 +1,6 @@
 import { fileNamePrefix, sceneDirName } from '@/lib/storage-naming'
 import { toast } from '@/components/ui/use-toast'
-import { useSceneStore } from '@/stores/scene-store'
+import { resolveSceneCharacterAddition, useSceneStore } from '@/stores/scene-store'
 import { useGenerationStore } from '@/stores/generation-store'
 import { useCharacterPromptStore } from '@/stores/character-prompt-store'
 import { useSettingsStore } from '@/stores/settings-store'
@@ -77,7 +77,8 @@ export async function generateSceneImage(options: {
     const latestSceneStore = useSceneStore.getState()
     const latestSettingsStore = useSettingsStore.getState()
     const sequenceMode = !!sequenceEntry
-    const sceneConfig = latestSceneStore.sceneCharacterAdditions[activePresetId]?.[scene.id] || null
+    // 캐릭터씬 · 예약대형 씬은 원본 작품의 씬 설정(의상 켜고 끄기 등)을 이어받는다.
+    const sceneConfig = resolveSceneCharacterAddition(latestSceneStore, activePresetId, scene.id)
     const sceneAdditionMode = latestSettingsStore.sceneCharacterAdditionMode
     const originalAddition = latestSettingsStore.expertSceneCharacterAdditionsEnabled
         && (sceneAdditionMode !== 'preset' || latestSceneStore.sceneCharacterAdditionsEnabled)

@@ -15,7 +15,7 @@ import { cn } from '@/lib/utils'
 import { getCharacterGender } from '@/lib/character-gender'
 import { joinSceneCharacterCostumePrompt, splitSceneCharacterCostumePrompt } from '@/lib/scene-character-prompts'
 import { useSettingsStore } from '@/stores/settings-store'
-import { useSceneStore, SceneCharacterAddition, SceneCustomCharacter } from '@/stores/scene-store'
+import { resolveSceneCharacterAddition, useSceneStore, SceneCharacterAddition, SceneCustomCharacter } from '@/stores/scene-store'
 
 interface SceneCustomCharacterDialogProps {
     open: boolean
@@ -50,7 +50,7 @@ export function SceneCustomCharacterDialog({
     const { t } = useTranslation()
     const addition = useSceneStore(state => {
         if (!presetId || !sceneId) return null
-        return state.sceneCharacterAdditions[presetId]?.[sceneId] || null
+        return resolveSceneCharacterAddition(state, presetId, sceneId)
     })
     const updateAddition = useSceneStore(state => state.updateSceneCharacterAddition)
     const clearAddition = useSceneStore(state => state.clearSceneCharacterAddition)

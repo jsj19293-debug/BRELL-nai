@@ -1,4 +1,4 @@
-import { useSceneStore } from '@/stores/scene-store'
+import { resolveSceneCharacterAddition, useSceneStore } from '@/stores/scene-store'
 import { useGenerationStore } from '@/stores/generation-store'
 import { useCharacterPromptStore } from '@/stores/character-prompt-store'
 import { useCharacterStore } from '@/stores/character-store'
@@ -17,7 +17,7 @@ export const isRemoteSceneQueueRunning = () => running
 export function remoteSceneCostContext(item: RemoteSceneDraft, base: RemoteCostContext, workspace?: RemoteResolvedWorkspace): RemoteCostContext {
     const settings = useSettingsStore.getState()
     const sceneState = useSceneStore.getState()
-    const config = sceneState.sceneCharacterAdditions[item.presetId]?.[item.sceneId]
+    const config = resolveSceneCharacterAddition(sceneState, item.presetId, item.sceneId) ?? undefined
     const addition = settings.expertSceneCharacterAdditionsEnabled && (settings.sceneCharacterAdditionMode !== 'preset' || sceneState.sceneCharacterAdditionsEnabled)
         && (config?.mode || 'preset') === settings.sceneCharacterAdditionMode && config?.mode !== 'custom' ? config : null
     const refs = workspace ?? useCharacterStore.getState()
