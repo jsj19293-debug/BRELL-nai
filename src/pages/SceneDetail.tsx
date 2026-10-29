@@ -64,6 +64,7 @@ import { SceneMultiCharacterPanel } from '@/components/scene/SceneMultiCharacter
 import { SceneCharacterAdditionDialog } from '@/components/scene/SceneCharacterAdditionDialog'
 import { SceneCustomCharacterDialog } from '@/components/scene/SceneCustomCharacterDialog'
 import { subscribeScenePromptDraftFlush } from '@/lib/scene-prompt-drafts'
+import { formatShotTime } from '@/lib/scene-job-done'
 
 export default function SceneDetail() {
     const { id: sceneId } = useParams()
@@ -1049,6 +1050,17 @@ function SceneImageCard({
                         loading="lazy"
                         decoding="async"
                     />
+                )}
+
+                {/* 뽑은 시각 */}
+                {image.timestamp > 0 && (
+                    <span
+                        className="pointer-events-none absolute right-2 top-2 rounded-md bg-black/65 px-1.5 py-0.5 text-[11px] font-medium tabular-nums text-white"
+                        title={new Date(image.timestamp).toLocaleString()}
+                        data-shot-time
+                    >
+                        {formatShotTime(image.timestamp)}
+                    </span>
                 )}
 
                 {/* Edit mode selection overlay */}

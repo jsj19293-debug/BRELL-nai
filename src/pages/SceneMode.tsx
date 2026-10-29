@@ -1112,7 +1112,7 @@ export default function SceneMode() {
                                 WebP
                             </Button>
                         </Tip>
-                        <Tip content={t('jobDone.tip', '작업완료하기 · 작품 폴더의 결과물을 지정한 폴더로 모으고 씬 폴더를 비웁니다')}>
+                        <Tip content={t('jobDone.tip2', '작업완료하기 · 씬마다 최신 1장을 원본 + WebP로 모아 두고, 나머지는 지웁니다')}>
                             <Button
                                 variant="ghost"
                                 className="h-8 shrink-0 px-2 text-[11px] font-bold text-muted-foreground hover:text-foreground"
