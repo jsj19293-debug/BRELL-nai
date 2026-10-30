@@ -192,6 +192,8 @@ import { useSettingsStore } from '@/stores/settings-store'
 import { SceneCharacterSequenceDialog } from '@/components/scene/SceneCharacterSequenceDialog'
 import { SceneRefI2iCycleControl } from '@/components/scene/SceneRefI2iCycleControl'
 import { SceneJobDoneDialog } from '@/components/scene/SceneJobDoneDialog'
+import { SceneOverwriteDialog } from '@/components/scene/SceneOverwriteDialog'
+import { FolderSync } from 'lucide-react'
 import { clearPresetSceneImages } from '@/services/scene-job-done'
 import { summarizeSceneClear, type SceneClearSummary } from '@/lib/scene-job-done'
 import { PackageCheck } from 'lucide-react'
@@ -795,6 +797,7 @@ export default function SceneMode() {
     const [showExportDialog, setShowExportDialog] = useState(false)
     const [showWebpExportDialog, setShowWebpExportDialog] = useState(false)
     const [showJobDoneDialog, setShowJobDoneDialog] = useState(false)
+    const [showOverwriteDialog, setShowOverwriteDialog] = useState(false)
     /** "씬 비우기" 확인 창에 보여 줄 개수 (열려 있을 때만) */
     const [clearSummary, setClearSummary] = useState<SceneClearSummary | null>(null)
     // 예약대형으로 만든 프리셋은 예약 탭에서 본다. 씬 모드 목록에는 넣지 않는다 (지금 열려 있는 경우만 예외).
@@ -1126,6 +1129,18 @@ export default function SceneMode() {
                             >
                                 <PackageCheck className="mr-1 h-3.5 w-3.5" />
                                 {t('jobDone.button', '작업완료')}
+                            </Button>
+                        </Tip>
+                        <Tip content={t('sceneOverwrite.tip', '씬 덮어씌우기 · 폴더의 씬 폴더 이미지를 이름이 맞는 씬에 넣습니다')}>
+                            <Button
+                                variant="ghost"
+                                className="h-8 shrink-0 px-2 text-[11px] font-bold text-muted-foreground hover:text-foreground"
+                                onClick={() => setShowOverwriteDialog(true)}
+                                disabled={!activePreset || isGenerating || scenes.length === 0}
+                                data-scene-overwrite-open
+                            >
+                                <FolderSync className="mr-1 h-3.5 w-3.5" />
+                                {t('sceneOverwrite.button', '덮어씌우기')}
                             </Button>
                         </Tip>
                         <Tip content={t('sceneClear.tip', '씬 비우기 · 지금 작품의 씬 이미지를 즐겨찾기까지 모두 지웁니다 (씬 · 프롬프트는 남음)')}>
@@ -1488,6 +1503,9 @@ export default function SceneMode() {
                     else toast({ title: t('jobDone.busy', '생성 중이거나 예약이 남아 있어요. 끝난 뒤에 눌러 주세요.'), variant: 'destructive' })
                 }}
             />
+            {showOverwriteDialog && activePresetId && (
+                <SceneOverwriteDialog open={showOverwriteDialog} onOpenChange={setShowOverwriteDialog} presetId={activePresetId} />
+            )}
             {showJobDoneDialog && activePresetId && (
                 <SceneJobDoneDialog open={showJobDoneDialog} onOpenChange={setShowJobDoneDialog} presetId={activePresetId} />
             )}
