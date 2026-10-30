@@ -192,6 +192,8 @@ import { useSettingsStore } from '@/stores/settings-store'
 import { SceneCharacterSequenceDialog } from '@/components/scene/SceneCharacterSequenceDialog'
 import { SceneRefI2iCycleControl } from '@/components/scene/SceneRefI2iCycleControl'
 import { SceneJobDoneDialog } from '@/components/scene/SceneJobDoneDialog'
+import { clearPresetSceneImages } from '@/services/scene-job-done'
+import { summarizeSceneClear, type SceneClearSummary } from '@/lib/scene-job-done'
 import { PackageCheck } from 'lucide-react'
 import { SceneCharacterAdditionDialog } from '@/components/scene/SceneCharacterAdditionDialog'
 import { SceneR2DirectUploadDialog } from '@/components/scene/SceneR2DirectUploadDialog'
@@ -793,6 +795,8 @@ export default function SceneMode() {
     const [showExportDialog, setShowExportDialog] = useState(false)
     const [showWebpExportDialog, setShowWebpExportDialog] = useState(false)
     const [showJobDoneDialog, setShowJobDoneDialog] = useState(false)
+    /** "씬 비우기" 확인 창에 보여 줄 개수 (열려 있을 때만) */
+    const [clearSummary, setClearSummary] = useState<SceneClearSummary | null>(null)
     // 예약대형으로 만든 프리셋은 예약 탭에서 본다. 씬 모드 목록에는 넣지 않는다 (지금 열려 있는 경우만 예외).
     const visiblePresets = useMemo(
         () => presets.filter(preset => !preset.characterAsset?.reservation || preset.id === activePresetId),
@@ -1124,6 +1128,18 @@ export default function SceneMode() {
                                 {t('jobDone.button', '작업완료')}
                             </Button>
                         </Tip>
+                        <Tip content={t('sceneClear.tip', '씬 비우기 · 지금 작품의 씬 이미지를 즐겨찾기까지 모두 지웁니다 (씬 · 프롬프트는 남음)')}>
+                            <Button
+                                variant="ghost"
+                                className="h-8 shrink-0 px-2 text-[11px] font-bold text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+                                onClick={() => setClearSummary(summarizeSceneClear(scenes))}
+                                disabled={!activePreset || isGenerating || !scenes.some(scene => scene.images.length > 0)}
+                                data-scene-clear-open
+                            >
+                                <Trash2 className="mr-1 h-3.5 w-3.5" />
+                                {t('sceneClear.button', '비우기')}
+                            </Button>
+                        </Tip>
                         {characterProgress && (
                             <Tip content={t('characterAsset.chipTip', "캐릭터씬 · '{{name}}'(으)로만 생성됩니다{{cycle}}", {
                                 name: characterProgress.characterName,
@@ -1453,6 +1469,25 @@ export default function SceneMode() {
                 )}
             </div>
 
+            <ConfirmDialog
+                open={clearSummary !== null}
+                onOpenChange={(open: boolean) => { if (!open) setClearSummary(null) }}
+                title={t('sceneClear.title', '씬 비우기')}
+                description={clearSummary ? t('sceneClear.desc', '"{{name}}" 씬 {{s}}개의 이미지 {{n}}장을 모두 지웁니다{{fav}}.\n파일까지 삭제되고 되돌릴 수 없어요. 씬과 프롬프트는 그대로 남아요.', {
+                    name: activePreset?.name ?? '',
+                    s: clearSummary.scenes,
+                    n: clearSummary.images,
+                    fav: clearSummary.favorites > 0 ? t('sceneClear.fav', ' (즐겨찾기 {{n}}장 포함)', { n: clearSummary.favorites }) : '',
+                }) : ''}
+                confirmText={t('sceneClear.confirm', '모두 지우기')}
+                variant="destructive"
+                onConfirm={async () => {
+                    if (!activePresetId) return
+                    const result = await clearPresetSceneImages(activePresetId)
+                    if (result.ok) toast({ title: t('sceneClear.done', '씬 이미지 {{n}}장을 지웠어요', { n: result.deleted }), variant: 'success' })
+                    else toast({ title: t('jobDone.busy', '생성 중이거나 예약이 남아 있어요. 끝난 뒤에 눌러 주세요.'), variant: 'destructive' })
+                }}
+            />
             {showJobDoneDialog && activePresetId && (
                 <SceneJobDoneDialog open={showJobDoneDialog} onOpenChange={setShowJobDoneDialog} presetId={activePresetId} />
             )}

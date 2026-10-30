@@ -118,3 +118,33 @@ export async function finishSceneJob(presetId: string, archiveFolder: string): P
         return { ok: false, reason: 'failed', error: String(error) }
     }
 }
+
+/**
+ * "씬 비우기": 지금 작품의 모든 씬 이미지를 즐겨찾기까지 지운다 (파일도). 씬 · 프롬프트는 그대로.
+ * 다른 작품은 건드리지 않는다.
+ */
+export async function clearPresetSceneImages(presetId: string): Promise<{ ok: true; deleted: number } | { ok: false; reason: 'busy' | 'no-preset' }> {
+    const scenes = useSceneStore.getState()
+    if (scenes.isGenerating || scenes.getTotalQueueCount(presetId) > 0) return { ok: false, reason: 'busy' }
+    const preset = scenes.presets.find(candidate => candidate.id === presetId)
+    if (!preset) return { ok: false, reason: 'no-preset' }
+    const images = preset.scenes.flatMap(scene => scene.images)
+    const deletedPaths: string[] = []
+    for (const image of images) {
+        if (image.url.startsWith('data:')) continue
+        try {
+            await remove(image.url)
+        } catch (error) {
+            console.warn('Failed to delete the scene image:', image.url, error)
+        }
+        deletedPaths.push(image.url)
+    }
+    useSceneStore.setState(state => ({
+        presets: state.presets.map(candidate => candidate.id !== presetId ? candidate : {
+            ...candidate,
+            scenes: candidate.scenes.map(scene => (scene.images.length > 0 ? { ...scene, images: [] } : scene)),
+        }),
+    }))
+    if (deletedPaths.length > 0) window.dispatchEvent(new CustomEvent('imageDeleted', { detail: { paths: deletedPaths } }))
+    return { ok: true, deleted: images.length }
+}

@@ -127,3 +127,21 @@ export function formatShotTime(timestamp: number, now: Date = new Date()): strin
     const time = `${pad(date.getHours())}:${pad(date.getMinutes())}`
     return date.getFullYear() === now.getFullYear() ? `${day} ${time}` : `${date.getFullYear()}/${day} ${time}`
 }
+
+export interface SceneClearSummary {
+    scenes: number
+    images: number
+    favorites: number
+}
+
+/** "씬 비우기"로 지울 것: 이미지가 있는 씬 수, 이미지 수, 그중 즐겨찾기 수 */
+export function summarizeSceneClear(scenes: readonly JobScene[]): SceneClearSummary {
+    const summary: SceneClearSummary = { scenes: 0, images: 0, favorites: 0 }
+    for (const scene of scenes) {
+        if (scene.images.length === 0) continue
+        summary.scenes += 1
+        summary.images += scene.images.length
+        summary.favorites += scene.images.filter(image => image.isFavorite).length
+    }
+    return summary
+}
