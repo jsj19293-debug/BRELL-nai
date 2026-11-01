@@ -1,6 +1,6 @@
 // 씬 덮어씌우기: 하위 폴더 ↔ 씬 짝짓기, 폴더 파일로 이미지 목록 만들기
 import assert from 'node:assert/strict'
-import { matchSceneFolders, imagesFromFolder } from '../src/lib/scene-overwrite.ts'
+import { matchSceneFolders, imagesFromFolder, repairForeignScenes, ownFolders } from '../src/lib/scene-overwrite.ts'
 
 const R = 'C:\\N\\운빨좆망겜 (4)'
 const f = (name, n = 1) => ({ name, path: `${R}\\${name}`, imageCount: n })
@@ -26,4 +26,18 @@ const files = [
 const prev = [{ id: 'old', url: `${R}\\1 기본\\NAIS_SCENE_1760000000100.png`, timestamp: 1, isFavorite: true }, { id: 'gone', url: 'D:\\other.png', timestamp: 9, isFavorite: false }]
 const images = imagesFromFolder(files, prev, i => `new-${i}`)
 assert.deepEqual(images.map(i => [i.id, i.isFavorite]), [['new-1', false], ['old', true]])
+// 다른 작품 폴더를 같이 쓰던 씬 바로잡기
+const ROOT = 'C:\\N\\Nightmare_Scene', OWN = ROOT + '\\운빨좆망겜 (14) (5)', OTHER = ROOT + '\\운빨좆망겜 (14)'
+const rep = repairForeignScenes([
+    { id: 'a', folderPath: OTHER + '\\1 기본', images: [{ url: OTHER + '\\1 기본\\x.png' }, { url: OWN + '\\1 기본\\y.png' }, { url: 'D:\\밖\\z.png' }, { url: 'data:image/png;base64,AA' }] },
+    { id: 'b', folderPath: OWN + '\\2 - 웃음', images: [{ url: OWN + '\\2 - 웃음\\q.png' }] },
+    { id: 'c', images: [] },
+], OWN, ROOT)
+assert.equal(rep.changed, 1)
+assert.equal(rep.scenes[0].folderPath, undefined)
+assert.deepEqual(rep.scenes[0].images.map(i => i.url.split('\\').pop()), ['y.png', 'z.png', 'data:image/png;base64,AA'])
+assert.equal(rep.scenes[1].folderPath, OWN + '\\2 - 웃음')
+// "운빨좆망겜 (14)" 는 "운빨좆망겜 (14) (5)" 의 앞부분이지만 다른 폴더다
+assert.deepEqual(ownFolders([OTHER + '\\1 기본', OWN + '\\1 기본', OWN], OWN), [OWN + '\\1 기본', OWN])
+assert.deepEqual(repairForeignScenes([{ id: 'z', folderPath: OWN + '\\9', images: [{ url: OWN + '\\9\\a.png' }] }], OWN, ROOT).changed, 0)
 console.log('Scene overwrite checks passed.')

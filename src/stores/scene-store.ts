@@ -1530,7 +1530,11 @@ export const useSceneStore = create<SceneState>()(
                         newScenes = jsonContent.scenes.map((s: any) => ({
                             ...s,
                             id: s.id || crypto.randomUUID(), // Ensure ID exists
-                            images: s.images || [],
+                            // 불러온 작품은 자기 이름의 폴더를 따로 쓴다: 내보낸 쪽의 폴더 위치 · 이미지 목록을 이어받으면
+                            // 원본 작품과 같은 폴더에 저장돼 이미지가 섞인다.
+                            images: [],
+                            folderPath: undefined,
+                            sourceSceneId: undefined,
                             multiCharacterSlots: normalizeSceneMultiCharacterSlots(s.multiCharacterSlots),
                         }))
                         // If importing a full preset object, try to preserve its ID if unique, otherwise gen new

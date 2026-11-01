@@ -100,3 +100,37 @@ export function imagesFromFolder(files: readonly FolderFile[], previous: readonl
     })
     return images.sort((a, b) => b.timestamp - a.timestamp)
 }
+
+const inside = (path: string, folder: string) => {
+    const a = pathKey(path)
+    const b = pathKey(folder).replace(/[\\/]+$/, '')
+    return a === b || a.startsWith(b + '\\') || a.startsWith(b + '/')
+}
+
+export interface RepairScene {
+    id: string
+    folderPath?: string
+    images: readonly { url: string }[]
+}
+
+/**
+ * 다른 작품의 폴더를 같이 쓰던 씬 바로잡기 (JSON으로 불러온 작품 · 예전 덮어씌우기).
+ * - 씬이 기억하는 폴더가 이 작품 폴더 밖이면 지운다 (다음 저장부터 자기 폴더를 쓴다).
+ * - 씬 폴더 모음(NAIS_Scene 등) 안이지만 이 작품 폴더 밖에 있는 이미지(= 다른 작품 이미지)는 목록에서 뺀다. 파일은 그대로.
+ */
+export function repairForeignScenes<Scene extends RepairScene>(scenes: readonly Scene[], presetFolder: string, sceneRoot: string): { scenes: Scene[]; changed: number } {
+    let changed = 0
+    const next = scenes.map(scene => {
+        const foreignFolder = !!scene.folderPath && !inside(scene.folderPath, presetFolder)
+        const images = scene.images.filter(image => image.url.startsWith('data:') || !inside(image.url, sceneRoot) || inside(image.url, presetFolder))
+        if (!foreignFolder && images.length === scene.images.length) return scene
+        changed++
+        return { ...scene, folderPath: foreignFolder ? undefined : scene.folderPath, images } as Scene
+    })
+    return { scenes: next, changed }
+}
+
+/** 이 작품 폴더 안에 있는 후보만 남긴다. */
+export function ownFolders(candidates: readonly string[], presetFolder: string): string[] {
+    return candidates.filter(folder => inside(folder, presetFolder))
+}

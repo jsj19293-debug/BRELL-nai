@@ -60,7 +60,7 @@ export function SceneOverwriteDialog({ open, onOpenChange, presetId }: { open: b
         setRunning(true)
         try {
             const result = await applySceneOverwrite(presetId, matches.filter(match => checked.has(match.sceneId)))
-            toast({ title: t('sceneOverwrite.done', '씬 {{s}}개에 이미지 {{n}}장을 넣었어요', { s: result.scenes, n: result.images }), variant: 'success' })
+            toast({ title: t('sceneOverwrite.done2', '씬 {{s}}개에 이미지 {{c}}장을 복사해 넣었어요', { s: result.scenes, c: result.copied }), description: t('sceneOverwrite.doneTotal', '씬 이미지 합계 {{n}}장', { n: result.images }), variant: 'success' })
             onOpenChange(false)
         } catch (error) {
             toast({ title: t('sceneOverwrite.failed', '덮어씌우지 못했어요'), description: String(error), variant: 'destructive' })
@@ -77,7 +77,7 @@ export function SceneOverwriteDialog({ open, onOpenChange, presetId }: { open: b
                 <DialogHeader>
                     <DialogTitle className="flex items-center gap-2"><FolderSync className="h-5 w-5 text-primary" />{t('sceneOverwrite.title', '씬 덮어씌우기')}</DialogTitle>
                     <DialogDescription>
-                        {t('sceneOverwrite.desc', '고른 폴더 안의 씬 폴더를 "{{name}}"의 씬과 이름(없으면 맨 앞 번호)으로 맞춰서, 체크한 씬에 그 폴더의 이미지를 넣습니다. 파일은 옮기거나 지우지 않아요.', { name: presetName })}
+                        {t('sceneOverwrite.desc', '고른 폴더 안의 씬 폴더를 "{{name}}"의 씬과 이름(없으면 맨 앞 번호)으로 맞춰서, 체크한 씬에 그 폴더의 이미지를 이 작품의 씬 폴더로 복사해 넣습니다. 고른 폴더의 파일은 그대로예요.', { name: presetName })}
                     </DialogDescription>
                 </DialogHeader>
 

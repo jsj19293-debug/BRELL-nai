@@ -825,6 +825,7 @@ export default function SceneMode() {
                     ? t('scene.folderRefresh.changed', '폴더와 맞췄어요: {{added}}장 추가, {{removed}}장 정리', { added: result.added, removed: result.removed })
                     : t('scene.folderRefresh.same', '폴더와 이미 같아요 (씬 {{n}}개 확인)', { n: result.scenes }),
                 description: [
+                    result.repaired > 0 ? t('scene.folderRefresh.repaired', '다른 작품 폴더를 같이 쓰던 씬 {{n}}개를 이 작품 폴더로 되돌렸어요 (다른 작품 이미지는 목록에서만 뺐어요).', { n: result.repaired }) : '',
                     result.sorted > 0 ? t('scene.folderRefresh.sorted', '작품 폴더의 이미지 {{n}}장을 번호 · 이름에 맞는 씬으로 옮겼어요.', { n: result.sorted }) : '',
                     result.unsorted.length > 0 ? t('scene.folderRefresh.unsorted', '맞는 씬이 없어 그대로 둔 파일 {{n}}개: {{names}}', {
                         n: result.unsorted.length,
@@ -832,7 +833,7 @@ export default function SceneMode() {
                     }) : '',
                     result.createdFolders > 0 ? t('scene.folderRefresh.created2', '폴더가 없던 씬 {{n}}개의 폴더를 만들었어요.', { n: result.createdFolders }) : '',
                 ].filter(Boolean).join(' ') || undefined,
-                variant: changed || result.sorted > 0 ? 'success' : 'default',
+                variant: changed || result.sorted > 0 || result.repaired > 0 ? 'success' : 'default',
             })
         } catch (error) {
             console.error('Failed to refresh scenes from folders:', error)
@@ -894,7 +895,10 @@ export default function SceneMode() {
                     scenes: activePreset.scenes.map(scene => ({
                         ...scene,
                         images: [],  // 이미지 제거
-                        queueCount: 0  // 대기열도 초기화
+                        queueCount: 0,  // 대기열도 초기화
+                        // 저장 폴더 위치는 이 PC의 이 작품 것이라 내보내지 않는다 (불러온 쪽이 같은 폴더를 쓰지 않게).
+                        folderPath: undefined,
+                        sourceSceneId: undefined,
                     })),
                     sceneCharacterAdditionsEnabled: sceneState.sceneCharacterAdditionsEnabled,
                     sceneCharacterAdditions,

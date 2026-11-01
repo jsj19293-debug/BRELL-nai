@@ -8,6 +8,8 @@ import { join } from '@tauri-apps/api/path'
 import { ensureFolder, listImageFiles, resolveScenePresetFolder, sceneFolderCandidates } from '@/lib/rell-folders'
 import { planLooseFiles } from '@/lib/scene-loose-files'
 import { syncSceneImages } from '@/lib/scene-folder-sync'
+import { ownFolders, repairForeignScenes } from '@/lib/scene-overwrite'
+import { dirname } from '@tauri-apps/api/path'
 
 export interface SceneFolderRefreshResult {
     scenes: number
@@ -21,6 +23,8 @@ export interface SceneFolderRefreshResult {
     sorted: number
     /** 맞는 씬을 찾지 못해 그대로 둔 낱장 이미지 이름 */
     unsorted: string[]
+    /** 다른 작품 폴더를 같이 쓰다가 자기 폴더로 되돌린 씬 수 */
+    repaired: number
 }
 
 /** 작품 폴더 바로 아래의 이미지를 맞는 씬 폴더로 옮긴다. 같은 이름의 파일이 이미 있으면 그 파일은 건드리지 않는다. */
@@ -70,16 +74,41 @@ async function sortLooseFiles(
 }
 
 export async function refreshPresetFromFolders(presetId: string): Promise<SceneFolderRefreshResult> {
-    const preset = useSceneStore.getState().presets.find(candidate => candidate.id === presetId)
-    const result: SceneFolderRefreshResult = { scenes: 0, added: 0, removed: 0, missingFolders: [], createdFolders: 0, sorted: 0, unsorted: [] }
+    let preset = useSceneStore.getState().presets.find(candidate => candidate.id === presetId)
+    const result: SceneFolderRefreshResult = { scenes: 0, added: 0, removed: 0, missingFolders: [], createdFolders: 0, sorted: 0, unsorted: [], repaired: 0 }
     if (!preset) return result
 
-    const candidates = await Promise.all(preset.scenes.map(scene => sceneFolderCandidates(preset.name, scene)))
+    // 0) 다른 작품의 폴더를 같이 쓰던 씬(JSON으로 불러온 작품 등)을 자기 폴더로 되돌린다. 캐릭터씬 · 예약대형은 폴더 구조가 달라 제외.
+    const ownPresetFolder = preset.characterAsset ? null : await resolveScenePresetFolder(preset.name)
+    if (ownPresetFolder) {
+        const repaired = repairForeignScenes(preset.scenes, ownPresetFolder, await dirname(ownPresetFolder))
+        if (repaired.changed > 0) {
+            result.repaired = repaired.changed
+            const byId = new Map(repaired.scenes.map(scene => [scene.id, scene]))
+            useSceneStore.setState(state => ({
+                presets: state.presets.map(candidate => candidate.id !== presetId ? candidate : {
+                    ...candidate,
+                    scenes: candidate.scenes.map(scene => {
+                        const fixed = byId.get(scene.id)
+                        return fixed ? { ...scene, folderPath: fixed.folderPath, images: fixed.images } : scene
+                    }),
+                }),
+            }))
+            preset = useSceneStore.getState().presets.find(candidate => candidate.id === presetId)
+            if (!preset) return result
+        }
+    }
+    const current0 = preset
+    // 일반 작품은 자기 작품 폴더 안의 폴더만 씬 폴더로 본다.
+    const candidates = await Promise.all(current0.scenes.map(async scene => {
+        const found = await sceneFolderCandidates(current0.name, scene)
+        return ownPresetFolder ? ownFolders(found, ownPresetFolder) : found
+    }))
 
     // 1) 작품 폴더에 낱장으로 넣어 둔 이미지를 이름 · 숫자에 맞는 씬 폴더로 옮긴다 (예약대형 묶음은 폴더 구조가 달라서 제외).
-    if (!preset.characterAsset?.reservation) {
+    if (!current0.characterAsset?.reservation) {
         try {
-            await sortLooseFiles(preset.name, preset.scenes, candidates, result)
+            await sortLooseFiles(current0.name, current0.scenes, candidates, result)
         } catch (error) {
             console.warn('Failed to sort loose images into scene folders:', error)
         }
@@ -96,7 +125,7 @@ export async function refreshPresetFromFolders(presetId: string): Promise<SceneF
     const foldersToCreate = new Set<string>()
     const stamp = Date.now()
 
-    preset.scenes.forEach((scene, sceneIndex) => {
+    current0.scenes.forEach((scene, sceneIndex) => {
         const latest = current.scenes.find(candidate => candidate.id === scene.id)
         if (!latest) return
         result.scenes++
