@@ -72,7 +72,7 @@ let hiddenBridge: Promise<BalloonBridge> | null = null
 function rendererBridge(): Promise<BalloonBridge> {
     if (hiddenBridge) return hiddenBridge
     hiddenFrame = document.createElement('iframe')
-    hiddenFrame.src = BALLOON_STUDIO_URL
+    hiddenFrame.src = `${BALLOON_STUDIO_URL}?mode=engine`
     hiddenFrame.title = 'postprocess-renderer'
     hiddenFrame.setAttribute('aria-hidden', 'true')
     hiddenFrame.tabIndex = -1

@@ -9,6 +9,7 @@ import { useShortcuts } from '@/hooks/useShortcuts'
 import MainMode from '@/pages/MainMode'
 import { DrawOverHost } from '@/components/tools/DrawOverHost'
 import { PostprocessPopupHost } from '@/components/postprocess/PostprocessPopup'
+import { preloadEngine } from '@/services/postprocess-engine'
 import { AnnouncementDialog } from '@/components/AnnouncementDialog'
 import { startInboxInBackground } from '@/inbox'
 import { installBlurMode } from '@/lib/blur-mode'
@@ -40,6 +41,8 @@ function AppContent() {
         startInboxInBackground()
         installBlurMode()
         installWorkLog()
+        // 후처리 그림판을 미리 띄워 두면 이미지 오른쪽 클릭 → 후처리가 바로 열린다.
+        preloadEngine()
     }, [])
 
     // Disable right-click globally except for allowed elements
