@@ -64,6 +64,11 @@ export function recordSceneI2iFirstPass(
     cycle = recordFirstPass(cycle, sessionId, { sceneId, sequenceEntry, ...info })
 }
 
+/** 이 세션의 이미지가 i2i 싸이클의 1단계(중간 결과)인지: 그러면 후처리는 2단계 결과에만 입힌다. */
+export function isSceneI2iFirstPass(sessionId: number): boolean {
+    return cycle.sessionId === sessionId && cycle.enabled && cycle.phase === 'first'
+}
+
 export function resetSceneI2iCycle(): void {
     cycle = idleCycleState<Entry>()
     showPhase('idle')

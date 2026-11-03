@@ -22,6 +22,7 @@
     "check:scene-i2i-cycle": "node --experimental-strip-types scripts/check-scene-i2i-cycle.mjs",
     "check:scene-job-done": "node --experimental-strip-types scripts/check-scene-job-done.mjs",
     "check:scene-overwrite": "node --experimental-strip-types scripts/check-scene-overwrite.mjs",
+    "check:postprocess": "node --experimental-strip-types scripts/check-postprocess.mjs",
     "check:scene-webp-export": "node --experimental-strip-types scripts/check-scene-webp-export.mjs",
     "check:prompt-notes": "node --experimental-strip-types scripts/check-prompt-notes.mjs",
     "check:translator": "node --experimental-strip-types scripts/check-translator.mjs",

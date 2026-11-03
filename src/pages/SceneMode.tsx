@@ -193,6 +193,10 @@ import { SceneCharacterSequenceDialog } from '@/components/scene/SceneCharacterS
 import { SceneRefI2iCycleControl } from '@/components/scene/SceneRefI2iCycleControl'
 import { SceneJobDoneDialog } from '@/components/scene/SceneJobDoneDialog'
 import { SceneOverwriteDialog } from '@/components/scene/SceneOverwriteDialog'
+import { ScenePostprocessDialog } from '@/components/postprocess/ScenePostprocessDialog'
+import { usePostprocessStore } from '@/stores/postprocess-store'
+import { sceneTemplateFor } from '@/services/postprocess-render'
+import { Wand2 } from 'lucide-react'
 import { FolderSync } from 'lucide-react'
 import { clearPresetSceneImages } from '@/services/scene-job-done'
 import { summarizeSceneClear, type SceneClearSummary } from '@/lib/scene-job-done'
@@ -1634,6 +1638,9 @@ const scheduleSceneThumbnailValidation = (
     }, 250)
 })
 
+/** 씬 카드가 속한 작품 id (카드 안에서 후처리 표시를 고를 때) */
+const activePresetIdForPost = (_scene: unknown) => useSceneStore.getState().activePresetId
+
 // Memoized SceneCard to prevent unnecessary re-renders
 const SceneCardItem = memo(function SceneCardItem({ scene, onClick, disabled = false, isOverlay = false, isNearViewport = false, showResolutionBadge = true, style, dragAttributes, dragListeners, onOpenSceneCharacterAddition }: any) {
     const { t } = useTranslation()
@@ -1642,6 +1649,13 @@ const SceneCardItem = memo(function SceneCardItem({ scene, onClick, disabled = f
     const [editName, setEditName] = useState(scene.name)
     const [moveTargets, setMoveTargets] = useState<Array<{ id: string; name: string }>>([])
     const [seedLockOpen, setSeedLockOpen] = useState(false)
+    const [postOpen, setPostOpen] = useState(false)
+    /** 이 씬에 지정된 후처리 템플릿 이름 (원본 작품에서 이어받은 것 포함) */
+    const postTemplateName = usePostprocessStore(state => {
+        if (!activePresetIdForPost(scene)) return null
+        const id = state.sceneTemplates[activePresetIdForPost(scene)!]?.[scene.id] ?? sceneTemplateFor(activePresetIdForPost(scene)!, scene.id)
+        return id ? state.templates.find(template => template.id === id)?.name ?? null : null
+    })
 
     // Essential reactive state - only subscribe to what MUST trigger re-renders
     const activePresetId = useSceneStore(s => s.activePresetId)
@@ -1794,6 +1808,11 @@ const SceneCardItem = memo(function SceneCardItem({ scene, onClick, disabled = f
                     <div className="pointer-events-none absolute left-2 top-2 z-30 flex max-w-[calc(100%-1rem)] flex-col items-start gap-1">
                         {showResolutionBadge && <SceneResolutionBadge width={scene.width || 832} height={scene.height || 1216} />}
                         <SceneQueueBadge activePresetId={activePresetId} sceneId={scene.id} />
+                        {postTemplateName && (
+                            <span className="flex max-w-full items-center gap-1 truncate rounded-md bg-primary/85 px-1.5 py-0.5 text-[10px] font-semibold text-primary-foreground" data-scene-postprocess-badge>
+                                <Wand2 className="h-3 w-3 shrink-0" />{postTemplateName}
+                            </span>
+                        )}
                     </div>
 
                     {/* 3-dot Menu - hidden in edit mode */}
@@ -1910,6 +1929,7 @@ const SceneCardItem = memo(function SceneCardItem({ scene, onClick, disabled = f
             <ContextMenuContent className="w-40">
                 <ContextMenuItem onClick={() => { setIsEditing(true); setEditName(scene.name) }}> <Pencil className="mr-2 h-4 w-4" /> {t('scene.rename')} </ContextMenuItem>
                 <ContextMenuItem onClick={() => onDuplicate()}> <Copy className="mr-2 h-4 w-4" /> {t('scene.duplicate')} </ContextMenuItem>
+                <ContextMenuItem data-scene-postprocess-item onClick={() => setPostOpen(true)}> <Wand2 className={cn("mr-2 h-4 w-4", postTemplateName && "text-primary")} /> {postTemplateName ? t('scenePost.menuSet', '후처리: {{name}}', { name: postTemplateName }) : t('scenePost.menu', '후처리 적용하기')} </ContextMenuItem>
                 <ContextMenuItem data-scene-seed-lock-item onClick={() => setSeedLockOpen(true)}> <Lock className={cn("mr-2 h-4 w-4", scene.fixedSeed && "text-red-500")} /> {scene.fixedSeed ? t('sceneSeedLock.menuLocked', '시드 고정됨 ({{n}})', { n: scene.fixedSeed }) : t('sceneSeedLock.title', '시드값 고정')} </ContextMenuItem>
                 {moveTargets.length > 0 && (
                     <ContextMenuSub>
@@ -1926,6 +1946,9 @@ const SceneCardItem = memo(function SceneCardItem({ scene, onClick, disabled = f
                 <ContextMenuSeparator />
                 <ContextMenuItem className="text-destructive focus:text-destructive" onClick={() => onDelete()}> <Trash2 className="mr-2 h-4 w-4" /> {t('actions.delete')} </ContextMenuItem>
             </ContextMenuContent>
+            {postOpen && activePresetId && (
+                <ScenePostprocessDialog open={postOpen} onOpenChange={setPostOpen} presetId={activePresetId} sceneId={scene.id} sceneName={scene.name} />
+            )}
             {seedLockOpen && (
                 <SceneSeedLockDialog
                     open={seedLockOpen}

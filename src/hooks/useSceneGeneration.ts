@@ -13,6 +13,7 @@ import { generateSceneImage } from '@/services/scene-generation'
 import { isRemoteSceneQueueRunning } from '@/services/remote-scene-queue'
 import {
     ensureSceneI2iCycle,
+    isSceneI2iFirstPass,
     recordSceneI2iFirstPass,
     resetSceneI2iCycle,
     runSceneI2iSecondPass,
@@ -176,6 +177,8 @@ export function useSceneGeneration() {
                     scene,
                     sequenceEntry,
                     onSaved: info => recordSceneI2iFirstPass(sessionId, scene.id, sequenceEntry, info),
+                    // i2i 싸이클의 1단계는 중간 결과라 후처리하지 않는다 (2단계 결과에 입힌다).
+                    skipPostprocess: isSceneI2iFirstPass(sessionId),
                 })
 
                 // Reset Streaming Data

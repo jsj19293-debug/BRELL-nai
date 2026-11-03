@@ -1,6 +1,7 @@
 import { fileNamePrefix, sceneDirName } from '@/lib/storage-naming'
 import { toast } from '@/components/ui/use-toast'
 import { resolveSceneCharacterAddition, useSceneStore } from '@/stores/scene-store'
+import { postprocessAfterSceneGeneration } from '@/services/postprocess-render'
 import { useGenerationStore } from '@/stores/generation-store'
 import { useCharacterPromptStore } from '@/stores/character-prompt-store'
 import { useSettingsStore } from '@/stores/settings-store'
@@ -58,6 +59,8 @@ export async function generateSceneImage(options: {
     /** 이 이미지만 저장할 폴더 (지정하지 않으면 씬의 폴더) */
     saveFolder?: string;
     onSaved?: (info: SceneImageSavedInfo) => void;
+    /** 씬 후처리 템플릿을 입히지 않는다 (i2i 싸이클 1단계 등 중간 결과) */
+    skipPostprocess?: boolean;
 }): Promise<string | undefined> {
     const { scene, presetId: activePresetId, sequenceEntry = null } = options
     const { savePath, useStreaming: streamingView } = useSettingsStore.getState()
@@ -452,6 +455,8 @@ export async function generateSceneImage(options: {
             }))
 
             addImageToScene(activePresetId, scene.id, fullPath, sceneFolderPath)
+            // 씬에 후처리 템플릿이 지정돼 있으면 마지막에 자동으로 입힌다 (원본은 그대로, 씬 폴더/후처리 에 저장).
+            if (!options.skipPostprocess) postprocessAfterSceneGeneration(activePresetId, scene.id, fullPath)
             logGeneratedImage(genState.model)
             options.onSaved?.({ path: fullPath, seed: finalSeed, characterPromptIds: [...characterPromptIds] })
 
