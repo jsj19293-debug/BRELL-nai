@@ -19,16 +19,15 @@ import { ensureEngine, hideEngine, showEngineAt, type CatalogItem, type EngineSe
 import { PostprocessTemplateManager } from '@/components/postprocess/PostprocessTemplateManager'
 
 type ApplyMode = 'all' | 'some'
-type Section = 'balloon' | 'asset' | 'template'
+type Section = 'balloon' | 'asset'
 
 const BALLOON_TABS: Array<[string, string]> = [['thin', '얇은 선'], ['thick', '굵은 선'], ['translucent', '반투명'], ['emotion', '떨림·움찔'], ['handdrawn', '손그림'], ['references', '참고 56종']]
 const ASSET_TABS: Array<[string, string]> = [['builtin', '기본 에셋'], ['ogok', '오곡전도사'], ['reactions', '히토미 켜라'], ['censor', '검열'], ['beta-censor', '베타검열'], ['cross-section', '단면도'], ['custom', '내 에셋']]
-const TEMPLATE_TABS: Array<[string, string]> = [['window', '윈도우 창 · 이동형 8종'], ['frame', '프레임·템플릿']]
 const WINDOW_FIELDS: Array<[string, string, boolean?]> = [['dw-title', '창 제목'], ['dw-lead', '강조 문구'], ['dw-body', '본문', true], ['dw-footer', '추가 안내'], ['dw-button0', '버튼 1'], ['dw-button1', '버튼 2'], ['dw-button2', '버튼 3'], ['dw-code', '중지 코드']]
 
 /**
  * 이미지 오른쪽 클릭 → 후처리. 수동검열처럼 뜨는 NAIS 창:
- * 왼쪽 말풍선 · 에셋 · 이미지 템플릿 목록, 가운데 그림판, 오른쪽 고른 것 고치기(대사 · 창 문구),
+ * 왼쪽 말풍선 · 에셋 목록, 가운데 그림판, 오른쪽 고른 것 고치기(대사 · 글자 크기 · 색),
  * 아래 후처리 저장 · 이 이미지만 적용 · 씬에 적용(전체 / 일부).
  */
 export function PostprocessPopupHost() {
@@ -43,7 +42,7 @@ function PostprocessPopup({ path, onClose }: { path: string; onClose: () => void
     const [engine, setEngine] = useState<PostprocessEngine | null>(null)
     const [bridge, setBridge] = useState<BalloonBridge | null>(null)
     const [section, setSection] = useState<Section>('asset')
-    const [tab, setTab] = useState<Record<Section, string>>({ balloon: 'thin', asset: 'builtin', template: 'window' })
+    const [tab, setTab] = useState<Record<Section, string>>({ balloon: 'thin', asset: 'builtin' })
     const [catalogs, setCatalogs] = useState<Record<string, CatalogItem[]>>({})
     const [selection, setSelection] = useState<EngineSelection>({ version: 0, type: 'none' })
     const [draft, setDraft] = useState<Record<string, string>>({})
@@ -63,7 +62,7 @@ function PostprocessPopup({ path, onClose }: { path: string; onClose: () => void
     const scene = useSceneStore(state => owner ? state.presets.find(preset => preset.id === owner.presetId)?.scenes.find(item => item.id === owner.sceneId) ?? null : null)
     const sceneImages = useMemo(() => (scene?.images ?? []).filter(image => !image.url.startsWith('data:')), [scene])
     const current = templates.find(template => template.id === currentId) ?? null
-    const group = section === 'template' ? tab.template : `${section}:${tab[section]}`
+    const group = `${section}:${tab[section]}`
 
     // 미리 떠 있는 엔진을 받아 이 이미지로 새로 시작한다.
     useEffect(() => {
@@ -94,10 +93,13 @@ function PostprocessPopup({ path, onClose }: { path: string; onClose: () => void
         return () => { observer.disconnect(); window.removeEventListener('resize', place); window.clearTimeout(timer); window.clearTimeout(timer2) }
     }, [engine, step])
 
-    // 목록은 처음 볼 때 한 번 읽어 둔다.
+    // 목록은 처음 볼 때 한 번 읽어 둔다: 먼저 이름만 바로 보이고, 미리보기 그림이 다 불러와지면 그림까지 채운다.
+    const loadingGroups = useRef(new Set<string>())
     useEffect(() => {
-        if (!engine || catalogs[group]) return
+        if (!engine || catalogs[group] || loadingGroups.current.has(group)) return
+        loadingGroups.current.add(group)
         setCatalogs(previous => ({ ...previous, [group]: engine.catalog(group) }))
+        void engine.catalogReady(group).then(list => setCatalogs(previous => ({ ...previous, [group]: list }))).finally(() => loadingGroups.current.delete(group))
     }, [engine, group, catalogs])
 
     // 고른 것을 따라간다 (입력 중인 칸은 덮어쓰지 않는다).
@@ -118,11 +120,24 @@ function PostprocessPopup({ path, onClose }: { path: string; onClose: () => void
         return () => window.clearInterval(timer)
     }, [engine])
 
+    // 단축키 (창 쪽에 포커스가 있을 때. 그림판 안에서는 그림판이 같은 키를 처리한다)
+    // Delete/Backspace 지우기 · + = ] 크게 · - [ 작게 (Shift 와 함께 더 크게) · Ctrl+Z 되돌리기 · Ctrl+Y/Ctrl+Shift+Z 다시 · Esc 닫기
     useEffect(() => {
-        const onKey = (event: KeyboardEvent) => { if (event.key === 'Escape' && !busy) onClose() }
+        const onKey = (event: KeyboardEvent) => {
+            if (event.key === 'Escape') { if (!busy) onClose(); return }
+            const target = event.target as HTMLElement | null
+            if (!engine || step !== 'edit' || event.isComposing || target?.closest('input,textarea,select,[contenteditable="true"]')) return
+            const ctrl = event.ctrlKey || event.metaKey
+            if (ctrl && event.key.toLowerCase() === 'z') { event.preventDefault(); setSelection(engine.action(event.shiftKey ? 'redo' : 'undo')); return }
+            if (ctrl && event.key.toLowerCase() === 'y') { event.preventDefault(); setSelection(engine.action('redo')); return }
+            if (ctrl || event.altKey) return
+            if (event.key === 'Delete' || event.key === 'Backspace') { event.preventDefault(); setSelection(engine.action('delete')); return }
+            if (['+', '=', ']'].includes(event.key)) { event.preventDefault(); setSelection(engine.scale(event.shiftKey ? 1.25 : 1.1)); return }
+            if (['-', '_', '['].includes(event.key)) { event.preventDefault(); setSelection(engine.scale(event.shiftKey ? 0.8 : 1 / 1.1)) }
+        }
         window.addEventListener('keydown', onKey)
         return () => window.removeEventListener('keydown', onKey)
-    }, [busy, onClose])
+    }, [busy, engine, onClose, step])
 
     const add = async (item: CatalogItem) => {
         if (!engine) return
@@ -219,7 +234,7 @@ function PostprocessPopup({ path, onClose }: { path: string; onClose: () => void
     })
     const someTargets = sceneImages.filter(image => checked.has(pathKey(image.url))).map(image => image.url)
     const items = catalogs[group]
-    const tabs = section === 'balloon' ? BALLOON_TABS : section === 'asset' ? ASSET_TABS : TEMPLATE_TABS
+    const tabs = section === 'balloon' ? BALLOON_TABS : ASSET_TABS
     const textKey = (key: string) => ({ onFocus: () => { focusedRef.current = key }, onBlur: () => { focusedRef.current = null } })
 
     return (
@@ -231,13 +246,19 @@ function PostprocessPopup({ path, onClose }: { path: string; onClose: () => void
                     {scene && <span className="max-w-[12rem] truncate text-xs text-muted-foreground">{scene.name}</span>}
                     {current && <span className="rounded bg-primary/15 px-1.5 py-0.5 text-[11px] text-primary" data-postprocess-current>{current.name}</span>}
                     <div className="mx-2 flex items-center gap-0.5">
-                        {([['undo', Undo, '되돌리기'], ['redo', Redo, '다시 실행'], ['duplicate', Copy, '복제'], ['forward', ArrowUp, '앞으로'], ['backward', ArrowDown, '뒤로'], ['delete', Trash2, '삭제'], ['fit', Maximize, '화면 맞춤']] as const).map(([action, Icon, label]) => (
+                        {([['undo', Undo, '되돌리기 (Ctrl+Z)'], ['redo', Redo, '다시 실행 (Ctrl+Y)'], ['duplicate', Copy, '복제'], ['forward', ArrowUp, '앞으로'], ['backward', ArrowDown, '뒤로'], ['delete', Trash2, '삭제 (Delete)'], ['fit', Maximize, '화면 맞춤']] as const).map(([action, Icon, label]) => (
                             <Tip key={action} content={t(`postprocess.action.${action}`, label)}>
                                 <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => engine && setSelection(engine.action(action))} disabled={!engine || step !== 'edit'} data-postprocess-action={action}>
                                     <Icon className="h-4 w-4" />
                                 </Button>
                             </Tip>
                         ))}
+                        <Tip content={t('postprocess.action.smaller', '작게 ( - 또는 [ )')}>
+                            <Button variant="ghost" size="icon" className="h-8 w-8 text-base font-bold" onClick={() => engine && setSelection(engine.scale(1 / 1.1))} disabled={!engine || step !== 'edit'} data-postprocess-action="smaller">−</Button>
+                        </Tip>
+                        <Tip content={t('postprocess.action.bigger', '크게 ( + 또는 ] ) · Shift 와 함께 누르면 더 크게')}>
+                            <Button variant="ghost" size="icon" className="h-8 w-8 text-base font-bold" onClick={() => engine && setSelection(engine.scale(1.1))} disabled={!engine || step !== 'edit'} data-postprocess-action="bigger">+</Button>
+                        </Tip>
                     </div>
                     <div className="ml-auto flex items-center gap-1 rounded-lg border border-border/60 p-0.5">
                         <select value={picked} onChange={event => setPicked(event.target.value)} className="h-7 max-w-[12rem] rounded-md bg-transparent px-1.5 text-xs outline-none" data-postprocess-template-select>
@@ -257,8 +278,8 @@ function PostprocessPopup({ path, onClose }: { path: string; onClose: () => void
                 <div className="flex min-h-0 flex-1">
                     {/* 왼쪽: 넣을 것 */}
                     <aside className="flex w-72 shrink-0 flex-col border-r border-border/40" data-postprocess-catalog>
-                        <div className="grid grid-cols-3 gap-1 p-2">
-                            {([['balloon', '말풍선'], ['asset', '에셋'], ['template', '이미지 템플릿']] as Array<[Section, string]>).map(([key, label]) => (
+                        <div className="grid grid-cols-2 gap-1 p-2">
+                            {([['balloon', '말풍선'], ['asset', '에셋']] as Array<[Section, string]>).map(([key, label]) => (
                                 <button key={key} type="button" onClick={() => setSection(key)} className={cn('rounded-lg px-2 py-1.5 text-xs font-semibold', section === key ? 'bg-primary text-primary-foreground' : 'bg-muted/40 text-muted-foreground hover:text-foreground')} data-postprocess-section={key}>
                                     {t(`postprocess.section.${key}`, label)}
                                 </button>
@@ -348,7 +369,7 @@ function PostprocessPopup({ path, onClose }: { path: string; onClose: () => void
                     {/* 오른쪽: 고른 것 고치기 */}
                     <aside className="w-64 shrink-0 overflow-y-auto border-l border-border/40 p-3 text-xs" data-postprocess-inspector>
                         {selection.type === 'none' ? (
-                            <p className="text-muted-foreground">{t('postprocess.inspectorHint', '왼쪽에서 말풍선 · 에셋 · 템플릿을 넣고, 그림판에서 끌어 옮기거나 모서리로 크기 · 회전을 바꾸세요. 고르면 여기서 글자를 고칠 수 있어요.')}</p>
+                            <p className="text-muted-foreground">{t('postprocess.inspectorHint3', '왼쪽에서 말풍선 · 에셋을 넣고, 그림판에서 끌어 옮기거나 모서리로 크기 · 회전을 바꾸세요. 고르면 여기서 글자를 고칠 수 있어요. 단축키: Delete 지우기 · + / - 크게 · 작게 · Ctrl+Z 되돌리기')}</p>
                         ) : selection.type === 'window' ? (
                             <div className="space-y-2" data-postprocess-window-fields>
                                 <p className="font-semibold">{selection.name}</p>

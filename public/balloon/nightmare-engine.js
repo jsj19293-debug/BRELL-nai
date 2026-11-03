@@ -50,6 +50,18 @@
   ready:true,
   /** 목록: [{index,label,thumb}] */
   catalog(group){try{return buttons(group).map((b,index)=>({index,label:labelOf(b),thumb:thumbOf(b)}))}finally{closeDialogs()}},
+  /** 미리보기 그림이 다 불러와진 뒤에 목록을 찍는다 (그림은 불러온 뒤에 그려지기 때문) */
+  async catalogReady(group){
+   const list=buttons(group);
+   try{
+    const pending=()=>typeof referenceLoads!=='undefined'?[...referenceLoads.values()]:[];
+    const started=Date.now();
+    while(pending().length&&Date.now()-started<20000)await Promise.race([Promise.allSettled(pending()),new Promise(r=>setTimeout(r,500))]);
+    await Promise.all(list.map(b=>b.querySelector('img')).filter(Boolean).map(img=>img.complete?null:new Promise(r=>{img.onload=img.onerror=r})));
+    await new Promise(r=>setTimeout(r,60));
+    return list.map((b,index)=>({index,label:labelOf(b),thumb:thumbOf(b)}));
+   }finally{closeDialogs()}
+  },
   /** 목록에서 하나를 넣는다 */
   async choose(group,index){const list=buttons(group);const b=list[index];if(!b){closeDialogs();return false}b.click();await new Promise(r=>setTimeout(r,60));closeDialogs();return true},
   /** 지금 고른 것의 정보 */
@@ -76,11 +88,31 @@
   },
   /** 버튼 동작: undo · redo · delete · duplicate · fit · rotate · forward · backward */
   action(name){const ids={undo:'undo',redo:'redo',delete:'mobileDelete',duplicate:'mobileDuplicate',fit:'fit',rotate:'objectRotate',forward:'imageLayerUp',backward:'imageLayerDown'};const e=$(ids[name]);if(e&&!e.disabled)e.click();return this.selection()},
+  /** 고른 것 크게 / 작게 (가운데 기준, 글자 크기도 같이) */
+  scale(factor){
+   const target=(typeof current==='function'&&current())||(typeof currentImageLayer==='function'&&currentImageLayer())||null;
+   if(!target||!Number.isFinite(target.w)||!Number.isFinite(target.h))return this.selection();
+   const f=Math.max(.2,Math.min(5,factor)),w=Math.max(16,target.w*f),h=Math.max(16,target.h*f),k=w/target.w;
+   checkpoint();
+   target.x+= (target.w-w)/2;target.y+=(target.h-h)/2;target.w=w;target.h=h;
+   if(Number.isFinite(target.fontSize))target.fontSize=Math.max(6,Math.min(480,target.fontSize*k));
+   if(typeof markProjectDirty==='function')markProjectDirty();
+   sync();
+   return this.selection();
+  },
   /** 내 에셋 등록 (data URL) */
   async addCustomAsset(dataUrl,name){const blob=await (await fetch(dataUrl)).blob();const file=new File([blob],name||'asset.png',{type:blob.type||'image/png'});await importCustomAssetFiles([file]);return this.catalog('asset:custom')},
   /** 새 이미지로 시작 (말풍선 · 에셋은 비움) */
   async reset(dataUrl){closeDialogs();const im=await imageFrom(dataUrl);state={...state,width:im.width,height:im.height,image:dataUrl,items:[],imageLayers:[],panels:[],masks:[]};bg=im;selected=null;if(typeof imageLayerSelected!=='undefined')imageLayerSelected=null;history=[];future=[];cancelRetouch();setTool('select');fit();sync();return {width:im.width,height:im.height}},
  };
  window.addEventListener('resize',()=>{try{fit()}catch{}});
+ // 크기 단축키: + / = / ] 크게, - / [ 작게 (글자 입력 중에는 무시). Delete · 되돌리기는 원래 단축키 그대로.
+ window.addEventListener('keydown',e=>{
+  if(e.isComposing||e.ctrlKey||e.metaKey||e.altKey||e.target.matches?.('input,textarea,select,[contenteditable]')||e.target.isContentEditable)return;
+  const grow=['+','=',']'].includes(e.key),shrink=['-','_','['].includes(e.key);
+  if(!grow&&!shrink)return;
+  e.preventDefault();e.stopPropagation();
+  window.nightmareEngine.scale(grow?(e.shiftKey?1.25:1.1):(e.shiftKey?.8:1/1.1));
+ },true);
  window.dispatchEvent(new Event('nightmare-engine-ready'));
 })();

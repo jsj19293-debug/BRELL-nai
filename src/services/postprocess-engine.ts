@@ -29,11 +29,14 @@ export interface EngineSelection {
 export interface PostprocessEngine {
     ready: boolean
     catalog: (group: string) => CatalogItem[]
+    /** 미리보기 그림이 다 불러와진 뒤의 목록 */
+    catalogReady: (group: string) => Promise<CatalogItem[]>
     choose: (group: string, index: number) => Promise<boolean>
     selection: () => EngineSelection
     update: (patch: Record<string, string | number>) => EngineSelection
     action: (name: 'undo' | 'redo' | 'delete' | 'duplicate' | 'fit' | 'rotate' | 'forward' | 'backward') => EngineSelection
     addCustomAsset: (dataUrl: string, name: string) => Promise<CatalogItem[]>
+    scale: (factor: number) => EngineSelection
     reset: (dataUrl: string) => Promise<{ width: number; height: number }>
 }
 
