@@ -1,0 +1,9 @@
+'use strict';
+let studioInstallPrompt=null;
+const studioStandalone=()=>matchMedia('(display-mode: standalone)').matches||navigator.standalone===true;
+function updateStudioInstall(){const installed=studioStandalone();$('installStudio').textContent=installed?'앱으로 실행 중':'앱으로 설치';$('installStudio').disabled=installed}
+window.addEventListener('beforeinstallprompt',event=>{event.preventDefault();studioInstallPrompt=event;updateStudioInstall();if($('installDialog').open)$('confirmInstall').hidden=false});
+window.addEventListener('appinstalled',()=>{studioInstallPrompt=null;$('confirmInstall').hidden=true;$('installResult').textContent='설치가 완료됐어요. 홈 화면이나 앱 목록에서 말풍선 공방을 열어보세요.';$('installStudio').textContent='앱 설치됨';$('installStudio').disabled=true});
+$('installStudio').onclick=()=>{$('projectMore').open=false;$('installResult').textContent='';const ios=/iPad|iPhone|iPod/.test(navigator.userAgent)||(navigator.platform==='MacIntel'&&navigator.maxTouchPoints>1),android=/Android/.test(navigator.userAgent);$('installInstructions').textContent=ios?'Safari에서 공유 메뉴를 열고 「홈 화면에 추가」를 선택하세요. 「웹 앱으로 열기」가 보이면 켜 주세요.':android?'아래 설치 버튼을 누르세요. 버튼이 없으면 Chrome 또는 삼성 인터넷의 메뉴에서 「앱 설치」나 「홈 화면에 추가」를 선택하세요. 카카오톡 등 앱 안의 브라우저에서는 기본 브라우저로 열어주세요.':'설치 버튼을 누르거나 Chrome·Edge 주소창의 설치 아이콘을 사용하세요. Safari에서는 「파일 → Dock에 추가」를 사용할 수 있어요.';$('confirmInstall').hidden=!studioInstallPrompt;$('installDialog').showModal()};
+$('confirmInstall').onclick=async()=>{const prompt=studioInstallPrompt;if(!prompt)return;$('confirmInstall').disabled=true;try{await prompt.prompt();const answer=await prompt.userChoice;studioInstallPrompt=null;$('confirmInstall').hidden=true;$('installResult').textContent=answer.outcome==='accepted'?'설치 요청을 보냈어요. 설치가 끝나면 앱 목록에서 열어주세요.':'설치를 취소했어요. 브라우저 메뉴에서 나중에 설치할 수 있어요.'}catch{$('installResult').textContent='브라우저 메뉴의 앱 설치 또는 홈 화면에 추가를 이용해주세요.'}finally{$('confirmInstall').disabled=false}};
+$('closeInstall').onclick=()=>$('installDialog').close();updateStudioInstall();
