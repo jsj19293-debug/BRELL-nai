@@ -1,0 +1,46 @@
+'use strict';
+const EROSTE_STATUS_OUTPUT={width:1843,height:1037};
+const EROSTE_STATUS_PHOTO_SLOTS=[{key:'main',x:351,y:50,w:381,h:814},{key:'portrait',x:44,y:738,w:50,h:62}];
+const EROSTE_STATUS_REFERENCE='assets/eroste-status-reference.webp';
+let erosteStatusLoading=null;
+// Native text and UI use the supplied 1536 × 864 layout; only icons are raster assets; the central image slot starts empty.
+const erosteStatusFields=[];
+function statusField(group,label,value,x,y,w,h,size=13,options={}){erosteStatusFields.push({group,label,value:String(value),x,y,w,h,size,...options})}
+for(const [label,x,w]of[['스테이터스',110,100],['H 스테이터스',279,125],['스킬',458,70],['일지',604,66],['설정',730,76]])statusField('상단 메뉴',label,label,x,14,w,23,16,{color:label==='H 스테이터스'?'#fff':'#242424',bg:label==='H 스테이터스'?'#08080d':'#fafafa',bold:true});
+statusField('기본 정보','이름 제목','세리나',42,62,280,42,30,{bold:true});statusField('기본 정보','오른쪽 이름','세리나',1437,15,88,29,24,{bold:true});statusField('기본 정보','영문 이름','SERINA',1445,44, 70,13,9);
+statusField('기본 정보','부제','속박 조교 · 종속화 시뮬레이션',44,105,285,22,13,{bold:true});
+[['이름','세리나'],['나이','22세'],['직업','대학생'],['학과','심리학과 3학년'],['신장','165cm'],['체중','54kg'],['B-W-H','92(F) / 58 / 90'],['혈액형','A형'],['생일','9월 12일'],['별자리','처녀자리']].forEach(([a,b],i)=>{statusField('기본 정보',`${i+1}. 항목`,a,68,141+i*22.2,94,19,12);statusField('기본 정보',`${i+1}. 내용`,b,168,141+i*22.2,159,19,12,{bold:true})});
+statusField('프로필 · 스토리','제목','프로필 & 스토리',40,381,274,25,16,{bold:true});statusField('프로필 · 스토리','본문','심리학과 3학년에 재학 중인 평범한 대학생.\n같은 학과 남자친구와 캠퍼스 커플로 지내고 있었다.\n방학 기간을 맞아 고액 아르바이트를 소개받아\n특별한 ‘일’의 파트너로 참여하게 된다.\n순수하고 성실한 성격이지만,\n어딘가 비밀스러운 경험 앞에서 조금씩 흔들리기 시작한다.',40,411,281,111,12);
+statusField('현재 상황','제목','현재 상황',40,552,279,22,15,{bold:true});statusField('현재 상황','단계','특별 아르바이트 초반 단계',40,578,279,23,13,{bold:true});
+[['계약 기간','30일 (남은 기간 30일)'],['근무 장소','개인 지하 스튜디오'],['업무 내용','파트너의 지시 수행 및 훈련'],['계약 조건','절대 복종 / 비밀 유지 / 외부 접촉 금지']].forEach(([a,b],i)=>statusField('현재 상황',a,`${a} : ${b}`,40,602+i*19,280,18,11));
+statusField('현재 파트너 정보','제목','현재 파트너 정보',40,707,279,23,15,{bold:true});[['이름','권한 보유자(익명)'],['나이','31세'],['관계','파트너 / 고용주'],['특징','냉정하고 지배적인 성향의 남성']].forEach(([a,b],i)=>statusField('현재 파트너 정보',a,`${a} : ${b}`,108,738+i*18,218,17,11));
+statusField('H 스테이터스','제목','H 스테이터스',773,69,123,22,15,{bg:'#08080d',color:'#fff',bold:true});statusField('H 스테이터스','안내','※ 수치는 현재 상태를 기준으로 합니다.',1091,71,169,21,9);
+[['종속도',12,'파트너에게 얼마나 지배당하고 있는지'],['복종도',15,'명령에 대한 복종심과 순응도'],['음란도',18,'성적 자극에 대한 흥분과 개방도'],['민감도',20,'자극에 대한 신체 반응 민감도'],['정숙도',85,'통제와 순종, 순수함의 정도'],['굴욕 내성',10,'수치심과 굴욕에 견디는 정도']].forEach(([a,v,desc],i)=>{const y=112+i*33;statusField('H 스테이터스',`${i+1}. 항목`,a,800,y,95,23,15,{bold:true});statusField('H 스테이터스',`${i+1}. 설명`,desc,897,y+1,274,16,9);statusField('H 스테이터스',`${a} 수치`,v,1182,y+5, 70,23,14,{number:true,suffix:' / 100',max:100,gauge:{x:898,y:y+18,w:274,h:4,color:'#c45a9d'}})});
+statusField('주요 능력치','제목','주요 능력치',773,339,477,26,17,{bold:true});[['체력',92],['정신력',90],['의지력',88],['성욕',85],['매력',90]].forEach(([a,v],i)=>{const y=372+i*29.5;statusField('주요 능력치',`${i+1}. 항목`,a,803,y, 90,23,15,{bold:true});statusField('주요 능력치',`${a} 수치`,v,1170,y+3,82,22,14,{number:true,suffix:' / 100',max:100,gauge:{x:909,y:y+9,w:243,h:5,color:'#c45a9d'}})});
+statusField('신체 상태','제목','신체 상태',768,544,176,25,15,{bold:true});[['피로도',18,'매우 양호'],['청결도',95,'매우 깨끗함'],['스트레스',14,'안정'],['요의',23,'정상 범위'],['배변욕',22,'정상']].forEach(([a,v,desc],i)=>{const y=578+i*48;statusField('신체 상태',`${i+1}. 항목`,a,794,y,90,23,13,{bold:true});statusField('신체 상태',`${a} 수치`,v,911,y+2,25,18,11,{number:true,suffix:'%',max:100,gauge:{x:795,y:y+20,w:137,h:3,color:'#858585'}});statusField('신체 상태',`${a} 설명`,desc,874,y+25, 60,16,10,{align:'right'})});
+statusField('임신 정보','제목','임신 정보',970,544,109,25,15,{bold:true});statusField('임신 정보','현재 주기','현재 주기 : 난포기',1163,550,85,20,11);
+[['난포기','가임 확률 : 낮음\n(6일~10일)',980,586],['배란기','가임 확률 : 높음\n(11일~16일)',1175,589],['월경','가임 확률 : 없음\n(1일~5일)',976,706],['황체기','가임 확률 : 중간\n(17일~28일)',1175,706]].forEach(([name,desc,x,y])=>{statusField('임신 정보',`${name} 이름`,name,x,y, 70,18,11,{bold:true});statusField('임신 정보',`${name} 설명`,desc,x,y+21, 70,35,10)});
+statusField('임신 정보','중앙 안내','현재',1082,636,48,18,11,{bold:true,align:'center'});statusField('임신 정보','중앙 주기','난포기',1073,656,66,25,17,{bold:true,align:'center'});statusField('임신 정보','주기 일수','6일째',1085,685,48,20,12,{align:'center'});statusField('임신 정보','임신 여부','임신 여부    임신 아님',977,791,154,22,12);statusField('임신 정보','다음 예정일 제목','다음 예정일',1122,791,122,22,12,{bold:true});statusField('임신 정보','다음 예정일','7월 20일 (D-14)',1122,815,122,21,12);
+statusField('H 경험 내역','제목','H 경험 내역',1298,81,198,25,16,{bold:true});[['키스',3],['포옹',5],['손 잡기',7],['신체 접촉 (가벼운 스킨십)',4],['성기 접촉',0],['성교',0],['구강 성교',0],['애널 성교',0],['노출 경험',0],['기구 사용',0],['조교 / 지배 경험',0],['굴욕 / 모욕',0]].forEach(([a,v],i)=>{const y=127+i*31.5;statusField('H 경험 내역',`${i+1}. 항목`,a,1326,y,147,21,a.length>15?10:12);statusField('H 경험 내역',`${a} 횟수`,v,1479,y,24,20,12,{number:true,suffix:'회',max:999999,color:'#9f5d7a',align:'right'})});
+statusField('기타 기록','제목','기타 기록',1298,531,198,25,16,{bold:true});[['파트너와 함께한 기간',1,'일'],['총 만남 횟수',1,'회'],['총 H 이벤트 수',19,'회'],['최고 절정 경험',0,'회'],['조교 복종 횟수',2,'회'],['특별 지시 수행 횟수',1,'회'],['일기 작성',1,'회'],['사진 촬영 (비공개)',0,'회']].forEach(([a,v,suffix],i)=>{const y=565+i*29.4;statusField('기타 기록',`${i+1}. 항목`,a,1298,y,174,22,12);statusField('기타 기록',`${a} 수치`,v,1479,y,24,20,12,{number:true,suffix,max:999999,color:'#9f5d7a',align:'right'})});
+statusField('하단 메뉴','뒤로','뒤로',1368,835,44,24,13);statusField('하단 메뉴','메뉴','메뉴',1465,835,44,24,13);
+async function loadErosteStatusReference(){if(erostePhotos.has(EROSTE_STATUS_REFERENCE))return;if(!erosteStatusLoading)erosteStatusLoading=imageFrom(EROSTE_STATUS_REFERENCE).then(im=>erostePhotos.set(EROSTE_STATUS_REFERENCE,im)).catch(e=>{erosteStatusLoading=null;throw e});await erosteStatusLoading}
+function erosteStatusLayer(){return{id:crypto.randomUUID(),kind:'eroste',name:'에로스테 · H 스테이터스',erosteType:'status',erosteDesignWidth:1536,locked:true,x:0,y:0,w:EROSTE_STATUS_OUTPUT.width,h:EROSTE_STATUS_OUTPUT.height,visible:true,strokes:[],main:erostePhoto(),portrait:erostePhoto(),statusValues:erosteStatusFields.map(f=>f.number?Number(f.value):f.value)}}
+function validateErosteStatus(l){validateErosteStatusExtras(l);for(const {key}of EROSTE_STATUS_PHOTO_SLOTS){const p=l[key];if(p?.offsetY!==undefined&&(!Number.isFinite(p.offsetY)||p.offsetY< -100||p.offsetY>100))throw Error('에로스테 이미지 이동 위치가 올바르지 않습니다.');}const portrait=l.portrait;if(!portrait||typeof portrait.src!=='string'||portrait.src.length>24000000||portrait.src&&!/^data:image\/(png|jpeg|webp);base64,/.test(portrait.src)||!['x','y','zoom'].every(k=>Number.isFinite(portrait[k]))||portrait.x<0||portrait.x>100||portrait.y<0||portrait.y>100||portrait.zoom<100||portrait.zoom>300)throw Error('에로스테 이미지 정보가 올바르지 않습니다.');const p=l.main;if(l.locked!==true||l.erosteDesignWidth!==1536||l.strokes.length||!p||typeof p.src!=='string'||p.src.length>24000000||p.src&&!/^data:image\/(png|jpeg|webp);base64,/.test(p.src)||!['x','y','zoom'].every(k=>Number.isFinite(p[k]))||p.x<0||p.x>100||p.y<0||p.y>100||p.zoom<100||p.zoom>300||!Array.isArray(l.statusValues)||l.statusValues.length!==erosteStatusFields.length||l.statusValues.some((v,i)=>erosteStatusFields[i].number?(!Number.isInteger(v)||v<0||v>erosteStatusFields[i].max):(typeof v!=='string'||v.length>2000)))throw Error('에로스테 스테이터스 데이터가 올바르지 않습니다.')}
+function erosteStatusControls(l,section,field,photoControls){const result=buildErosteStatusControls(l,section,field,photoControls);if(typeof appendBadStatusIntegration==='function')appendBadStatusIntegration(l,section);return result}
+function drawErosteStatus(c,l){
+ const ref=erostePhotos.get(EROSTE_STATUS_REFERENCE);
+ drawErosteStatusBackdrop(c,ref);
+ for(const slot of EROSTE_STATUS_PHOTO_SLOTS){const p=l[slot.key],im=erostePhotos.get(p.src);if(!im)continue;const {x,y,w,h}=slot,k=Math.max(w/im.width,h/im.height)*p.zoom/100,iw=im.width*k,ih=im.height*k;c.save();c.beginPath();c.rect(x,y,w,h);c.clip();c.fillStyle='#fafafa';c.fillRect(x,y,w,h);c.drawImage(im,x+(w-iw)*p.x/100,y+(h-ih)*p.y/100+h*(p.offsetY??0)/100,iw,ih);c.restore()}
+ const values=erosteStatusDisplayValues(l);
+ // Draw gauges before text so clearing and track geometry never trim a description.
+ erosteStatusFields.forEach((f,i)=>{if(!f.gauge)return;const g=f.gauge;c.fillStyle='#e2e2e2';c.fillRect(g.x,g.y,g.w,g.h);c.fillStyle=g.color;c.fillRect(g.x,g.y,g.w*values[i]/100,g.h);if(g.h>=4){c.fillStyle='#fafafa';for(let px=17;px<g.w*values[i]/100;px+=17)c.fillRect(g.x+px,g.y,1,g.h)}});
+ erosteStatusFields.forEach((f,i)=>{
+  if(f.group==='임신 정보'&&['중앙 안내','중앙 주기','주기 일수'].includes(f.label))return;
+  c.save();c.beginPath();c.rect(f.x,f.y,f.w,f.h);c.clip();
+  const size=Math.max(10,f.size);c.font=`700 ${size}px "Studio Messenger",sans-serif`;const activePhase=f.group==='임신 정보'&&f.label===statusPhaseNames[erosteCyclePhaseIndex(l)]+' 이름';c.fillStyle=activePhase?EROSTE_STATUS_PINK:f.color||'#282828';c.textBaseline='top';c.textAlign=f.align||'left';
+  const rows=(String(values[i])+(f.suffix||'')).split('\n');
+  rows.forEach((row,j)=>c.fillText(row,f.align==='right'?f.x+f.w:f.align==='center'?f.x+f.w/2:f.x,f.y+j*size*1.45,f.w));c.restore();
+ });
+ drawErosteCycleRing(c,l);
+}
