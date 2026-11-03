@@ -1,0 +1,26 @@
+{
+  "id": "/",
+  "name": "말풍선 공방",
+  "short_name": "말풍선 공방",
+  "lang": "ko",
+  "description": "말풍선·대사·컷을 편집하는 만화 작업실",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#111816",
+  "theme_color": "#111816",
+  "icons": [
+    {
+      "src": "icons/studio-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "icons/studio-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    }
+  ]
+}
