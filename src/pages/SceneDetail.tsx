@@ -65,6 +65,8 @@ import { SceneCharacterAdditionDialog } from '@/components/scene/SceneCharacterA
 import { SceneCustomCharacterDialog } from '@/components/scene/SceneCustomCharacterDialog'
 import { subscribeScenePromptDraftFlush } from '@/lib/scene-prompt-drafts'
 import { formatShotTime } from '@/lib/scene-job-done'
+import { usePostprocessStore } from '@/stores/postprocess-store'
+import { pathKey } from '@/lib/scene-folder-sync'
 
 export default function SceneDetail() {
     const { id: sceneId } = useParams()
@@ -998,6 +1000,7 @@ function SceneImageCard({
     // I will restore the `loadImage` logic inside SceneImageCard to ensure images display correctly.
 
     const [imgSrc, setImgSrc] = useState<string>('')
+    const postApplied = usePostprocessStore(state => !image.url.startsWith('data:') && !!state.applied[pathKey(image.url)])
     const [cardRef, isNearViewport] = useNearViewport<HTMLDivElement>()
 
     useEffect(() => {
@@ -1050,6 +1053,13 @@ function SceneImageCard({
                         loading="lazy"
                         decoding="async"
                     />
+                )}
+
+                {/* 후처리를 입힌 이미지 */}
+                {postApplied && (
+                    <span className="pointer-events-none absolute bottom-2 right-2 z-10 rounded-md bg-primary/85 px-1.5 py-0.5 text-[11px] font-semibold text-primary-foreground" data-image-postprocess-badge>
+                        +후처리 적용중
+                    </span>
                 )}
 
                 {/* 뽑은 시각 */}

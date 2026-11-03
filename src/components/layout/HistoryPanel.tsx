@@ -34,6 +34,7 @@ import { useExifStore } from '@/stores/exif-store'
 import { bytesToImageDataUrl } from '@/lib/exif-stripper'
 import { processAndSaveExifImage } from '@/lib/exif-actions'
 import { ImageQuickActionItems } from '@/components/image/ImageQuickActionItems'
+import { usePostprocessPopup } from '@/stores/postprocess-popup-store'
 import {
     createHistoryIndexScope,
     HistoryImageType,
@@ -207,6 +208,7 @@ const HistoryImageItem = memo(function HistoryImageItem({
                     onInpaint={onInpaint ? () => onInpaint(image) : undefined}
                     onI2I={() => onI2I(image)}
                     onDrawOver={() => onDrawOver(image)}
+                    onPostprocess={!image.isTemporary && image.path ? () => usePostprocessPopup.getState().open(image.path) : undefined}
                     onSaveSeed={() => onSaveSeed(image)}
                     onLockSeed={() => onLockSeed(image)}
                     onAddReference={() => onAddAsReference(image)}

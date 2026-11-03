@@ -11,7 +11,6 @@ import { toast } from '@/components/ui/use-toast'
 import { cn } from '@/lib/utils'
 import { CensorEditor, type CensorEditorHandle } from '@/components/censor/CensorEditor'
 import { CensorI2iDialog } from '@/components/censor/CensorI2iDialog'
-import { PostprocessPanel, type PostprocessTarget } from '@/components/postprocess/PostprocessPanel'
 import { POSTPROCESS_FOLDER_NAME } from '@/lib/postprocess'
 import { useCensorStore } from '@/stores/censor-store'
 import { listImageFiles, listWorkFolders, openFolder, resolveWorkRoot, type WorkFolder } from '@/lib/rell-folders'
@@ -75,8 +74,6 @@ export default function CensorReview() {
     const [edited, setEdited] = useState(false)
     const [saving, setSaving] = useState(false)
     const [i2iOpen, setI2iOpen] = useState(false)
-    /** 후처리(말풍선 공방) 화면: 열려 있으면 그 이미지 (null 이면 이미지 없이 연 것) */
-    const [post, setPost] = useState<{ target: PostprocessTarget | null } | null>(null)
     const editorRef = useRef<CensorEditorHandle>(null)
     const busyRef = useRef(false)
     const freshThumbsRef = useRef<Record<string, string>>({})
@@ -304,7 +301,7 @@ export default function CensorReview() {
 
     // 검수 키: , < ← 이전 · . > → 다음 · Esc 목록 · Ctrl+S 저장
     useEffect(() => {
-        if (index === null || post) return
+        if (index === null) return
         const handleKey = (event: KeyboardEvent) => {
             const target = event.target as HTMLElement | null
             const typing = !!target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.tagName === 'SELECT' || target.isContentEditable)
@@ -329,21 +326,7 @@ export default function CensorReview() {
         }
         window.addEventListener('keydown', handleKey)
         return () => window.removeEventListener('keydown', handleKey)
-    }, [backToList, go, index, post, saveNow])
-
-    /** 지금 이미지를 후처리로 연다: 칠한 것은 먼저 저장하고, 검열본이 있으면 검열본을 연다. */
-    const openPostprocess = async () => {
-        if (!current) {
-            setPost({ target: null })
-            return
-        }
-        const wasEdited = !!editorRef.current?.isEdited()
-        if (!(await commit())) return
-        const output = censorOutput(current.name)
-        const censored = wasEdited || censoredNames.has(output.name.toLowerCase())
-        const path = censored ? await join(await censorFolderOf(folderPath), ...output.name.split('/')) : current.path
-        setPost({ target: { path, name: current.name, baseFolder: folderPath } })
-    }
+    }, [backToList, go, index, saveNow])
 
     const chooseFolder = async () => {
         try {
@@ -429,9 +412,7 @@ export default function CensorReview() {
             </aside>
 
             <section className="flex min-w-0 flex-1 flex-col rounded-2xl border border-border/60 bg-card/40">
-                {post ? (
-                    <PostprocessPanel target={post.target} onClose={() => setPost(null)} />
-                ) : !folderPath ? (
+                {!folderPath ? (
                     <div className="flex flex-1 items-center justify-center px-6 text-center text-sm text-muted-foreground">
                         {t('censor.pickFolder', '왼쪽에서 폴더를 고르면 그 폴더의 이미지가 모두 보입니다.')}
                     </div>
@@ -474,12 +455,6 @@ export default function CensorReview() {
                                     </Button>
                                 </Tip>
                             )}
-                            <Tip content={t('postprocess.openTip', '후처리: 이 이미지에 말풍선 · 대사 · 효과 넣기 (말풍선 공방)')}>
-                                <Button variant="outline" size="sm" className="h-8" onClick={() => void openPostprocess()} disabled={saving} data-censor-postprocess>
-                                    <WandSparkles className="mr-1.5 h-3.5 w-3.5" />
-                                    {t('postprocess.open', '후처리')}
-                                </Button>
-                            </Tip>
                             <Tip content={t('censor.saveTip', '지금 저장 (Ctrl+S). 다음 장으로 넘기면 자동으로 저장됩니다.')}>
                                 <Button size="sm" className="h-8" onClick={() => void saveNow()} disabled={!edited || saving}>
                                     <Save className="mr-1.5 h-3.5 w-3.5" />
@@ -509,12 +484,6 @@ export default function CensorReview() {
                                 <Button variant="ghost" size="sm" className="h-8 text-xs" onClick={() => clearViewed(folderKey)} disabled={summary.viewed === 0}>
                                     <RotateCcw className="mr-1 h-3.5 w-3.5" />
                                     {t('censor.clearViewed', '확인 표시 지우기')}
-                                </Button>
-                            </Tip>
-                            <Tip content={t('postprocess.openBlankTip', '후처리(말풍선 공방)를 이미지 없이 열기 · 템플릿 만들기/관리')}>
-                                <Button variant="outline" size="sm" className="h-8" onClick={() => setPost({ target: null })} data-censor-postprocess-blank>
-                                    <WandSparkles className="mr-1.5 h-3.5 w-3.5" />
-                                    {t('postprocess.open', '후처리')}
                                 </Button>
                             </Tip>
                             <Tip content={t('censorI2i.tip', '이 폴더의 이미지를 고른 작품의 씬에 순서대로 짝지어 그 씬의 프롬프트로 I2I')}>

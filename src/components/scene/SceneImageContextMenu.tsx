@@ -22,6 +22,7 @@ import { bytesToImageDataUrl } from '@/lib/exif-stripper'
 import { processAndSaveExifImage } from '@/lib/exif-actions'
 import { lockSeedFromImage, saveSeedFromImage } from '@/services/seed-vault-service'
 import { ImageQuickActionItems } from '@/components/image/ImageQuickActionItems'
+import { usePostprocessPopup } from '@/stores/postprocess-popup-store'
 
 interface SceneContextMenuProps {
     image: SceneImage
@@ -243,6 +244,7 @@ export function SceneImageContextMenu({ image, children, onDelete, onRegenerate,
                     onInpaint={onInpaint ? handleInpaint : undefined}
                     onI2I={handleI2I}
                     onDrawOver={handleDrawOver}
+                    onPostprocess={isFile ? () => usePostprocessPopup.getState().open(image.url) : undefined}
                     onSaveSeed={handleSaveSeed}
                     onLockSeed={handleLockSeed}
                     onAddReference={onAddRef}

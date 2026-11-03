@@ -8,6 +8,7 @@ import { useUpdateChecker } from '@/hooks/useUpdateChecker'
 import { useShortcuts } from '@/hooks/useShortcuts'
 import MainMode from '@/pages/MainMode'
 import { DrawOverHost } from '@/components/tools/DrawOverHost'
+import { PostprocessPopupHost } from '@/components/postprocess/PostprocessPopup'
 import { AnnouncementDialog } from '@/components/AnnouncementDialog'
 import { startInboxInBackground } from '@/inbox'
 import { installBlurMode } from '@/lib/blur-mode'
@@ -82,6 +83,7 @@ function AppContent() {
                 </Suspense>
             </ThreeColumnLayout>
             <DrawOverHost />
+            <PostprocessPopupHost />
             <AnnouncementDialog />
         </>
     )

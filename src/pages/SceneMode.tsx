@@ -195,6 +195,7 @@ import { SceneJobDoneDialog } from '@/components/scene/SceneJobDoneDialog'
 import { SceneOverwriteDialog } from '@/components/scene/SceneOverwriteDialog'
 import { ScenePostprocessDialog } from '@/components/postprocess/ScenePostprocessDialog'
 import { usePostprocessStore } from '@/stores/postprocess-store'
+import { pathKey } from '@/lib/scene-folder-sync'
 import { sceneTemplateFor } from '@/services/postprocess-render'
 import { Wand2 } from 'lucide-react'
 import { FolderSync } from 'lucide-react'
@@ -1656,6 +1657,8 @@ const SceneCardItem = memo(function SceneCardItem({ scene, onClick, disabled = f
         const id = state.sceneTemplates[activePresetIdForPost(scene)!]?.[scene.id] ?? sceneTemplateFor(activePresetIdForPost(scene)!, scene.id)
         return id ? state.templates.find(template => template.id === id)?.name ?? null : null
     })
+    /** 이 씬에서 후처리를 입힌 이미지 수 (일부 적용) */
+    const postAppliedCount = usePostprocessStore(state => scene.images.reduce((sum: number, image: { url: string }) => sum + (state.applied[pathKey(image.url)] ? 1 : 0), 0))
 
     // Essential reactive state - only subscribe to what MUST trigger re-renders
     const activePresetId = useSceneStore(s => s.activePresetId)
@@ -1808,9 +1811,12 @@ const SceneCardItem = memo(function SceneCardItem({ scene, onClick, disabled = f
                     <div className="pointer-events-none absolute left-2 top-2 z-30 flex max-w-[calc(100%-1rem)] flex-col items-start gap-1">
                         {showResolutionBadge && <SceneResolutionBadge width={scene.width || 832} height={scene.height || 1216} />}
                         <SceneQueueBadge activePresetId={activePresetId} sceneId={scene.id} />
-                        {postTemplateName && (
-                            <span className="flex max-w-full items-center gap-1 truncate rounded-md bg-primary/85 px-1.5 py-0.5 text-[10px] font-semibold text-primary-foreground" data-scene-postprocess-badge>
-                                <Wand2 className="h-3 w-3 shrink-0" />{postTemplateName}
+                        {(postTemplateName || postAppliedCount > 0) && (
+                            <span className="flex max-w-full items-center gap-1 truncate rounded-md bg-primary/85 px-1.5 py-0.5 text-[10px] font-semibold text-primary-foreground" title={postTemplateName ?? undefined} data-scene-postprocess-badge>
+                                <Wand2 className="h-3 w-3 shrink-0" />
+                                {postTemplateName
+                                    ? t('postprocess.badgeAll', '+후처리 적용중 · 전체')
+                                    : t('postprocess.badgeSome', '+후처리 적용중 · {{n}}장', { n: postAppliedCount })}
                             </span>
                         )}
                     </div>

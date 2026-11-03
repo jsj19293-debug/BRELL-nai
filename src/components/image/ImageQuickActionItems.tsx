@@ -14,6 +14,8 @@ interface ImageQuickActionItemsProps {
     onInpaint?: () => void
     onI2I?: () => void
     onDrawOver?: () => void
+    /** 후처리 (말풍선 · 에셋 · 이미지 템플릿) */
+    onPostprocess?: () => void
     /** 현재 시드값 저장 (시드 보관함) */
     onSaveSeed?: () => void
     /** 현재 시드값 고정 */
@@ -36,6 +38,7 @@ export function ImageQuickActionItems({
     onInpaint,
     onI2I,
     onDrawOver,
+    onPostprocess,
     onSaveSeed,
     onLockSeed,
     onAddReference,
@@ -51,7 +54,7 @@ export function ImageQuickActionItems({
     const hasFileActions = Boolean(onSaveAs || onCopy || onRegenerate)
     const hasExifActions = showExifDirectAction || showExifQuickAction
     const hasPrimaryActions = Boolean(onOpenSmartTools)
-    const hasEditorActions = Boolean(onInpaint || onI2I || onDrawOver || onSaveSeed || onLockSeed)
+    const hasEditorActions = Boolean(onInpaint || onI2I || onDrawOver || onPostprocess || onSaveSeed || onLockSeed)
     const hasToolActions = hasPrimaryActions || hasEditorActions
     const hasReferenceActions = Boolean(onAddReference || onLoadMetadata || onOpenFolder)
 
@@ -69,6 +72,7 @@ export function ImageQuickActionItems({
             {onI2I && <ContextMenuItem onClick={onI2I}><ImageIcon className="mr-2 h-4 w-4 text-indigo-400" />{t('tools.i2i.title')}</ContextMenuItem>}
             {onInpaint && <ContextMenuItem onClick={onInpaint}><Paintbrush className="mr-2 h-4 w-4 text-pink-400" />{t('tools.inpainting.title')}</ContextMenuItem>}
             {onDrawOver && <ContextMenuItem onClick={onDrawOver}><Brush className="mr-2 h-4 w-4 text-lime-400" />{t('smartTools.drawOver')}</ContextMenuItem>}
+            {onPostprocess && <ContextMenuItem onClick={onPostprocess} data-postprocess-menu><Wand2 className="mr-2 h-4 w-4 text-fuchsia-400" />{t('postprocess.menu', '후처리')}</ContextMenuItem>}
             {onSaveSeed && <ContextMenuItem onClick={onSaveSeed} data-save-seed><Sprout className="mr-2 h-4 w-4 text-emerald-400" />{t('seedVault.saveCurrent', '현재 시드값 저장')}</ContextMenuItem>}
             {onLockSeed && <ContextMenuItem onClick={onLockSeed} data-lock-seed><Lock className="mr-2 h-4 w-4 text-red-400" />{t('seedVault.lockCurrent', '현재 시드값 고정')}</ContextMenuItem>}
 

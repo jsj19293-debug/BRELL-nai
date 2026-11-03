@@ -111,6 +111,7 @@ export function postprocessImageFile(templateId: string, imagePath: string): Pro
             if (!(await exists(outFolder))) await mkdir(outFolder, { recursive: true })
             const outPath = await join(outFolder, postprocessFileName(name))
             await writeFile(outPath, dataUrlToBytes(png))
+            usePostprocessStore.getState().markApplied(imagePath, templateId, outPath)
             return { ok: true, path: outPath }
         } catch (error) {
             console.warn('Postprocess failed:', imagePath, error)
@@ -166,6 +167,19 @@ export async function postprocessExistingSceneImages(presetId: string, sceneId: 
     for (const image of scene?.images ?? []) {
         if (image.url.startsWith('data:')) continue
         const result = await postprocessImageFile(templateId, image.url)
+        if (result.ok) done++
+        else skipped++
+    }
+    return { done, skipped }
+}
+
+/** 고른 이미지들에만 입힌다 (씬 "일부 적용"). */
+export async function postprocessImages(templateId: string, imagePaths: readonly string[]): Promise<{ done: number; skipped: number }> {
+    let done = 0
+    let skipped = 0
+    for (const path of imagePaths) {
+        if (path.startsWith('data:')) continue
+        const result = await postprocessImageFile(templateId, path)
         if (result.ok) done++
         else skipped++
     }
