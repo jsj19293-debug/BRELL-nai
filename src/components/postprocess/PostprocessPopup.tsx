@@ -13,7 +13,7 @@ import { usePostprocessPopup } from '@/stores/postprocess-popup-store'
 import { useSceneStore } from '@/stores/scene-store'
 import { findSceneImageOwner } from '@/lib/scene-path'
 import { pathKey } from '@/lib/scene-folder-sync'
-import { sameAspect } from '@/lib/postprocess'
+import { isPostprocessOutput, sameAspect } from '@/lib/postprocess'
 import { fileToDataUrl, postprocessImages, thumbnailOf, type BalloonBridge } from '@/services/postprocess-render'
 import { ensureEngine, hideEngine, showEngineAt, type CatalogItem, type EngineSelection, type PostprocessEngine } from '@/services/postprocess-engine'
 import { PostprocessTemplateManager } from '@/components/postprocess/PostprocessTemplateManager'
@@ -60,7 +60,8 @@ function PostprocessPopup({ path, onClose }: { path: string; onClose: () => void
 
     const owner = useMemo(() => findSceneImageOwner(useSceneStore.getState().presets, path), [path])
     const scene = useSceneStore(state => owner ? state.presets.find(preset => preset.id === owner.presetId)?.scenes.find(item => item.id === owner.sceneId) ?? null : null)
-    const sceneImages = useMemo(() => (scene?.images ?? []).filter(image => !image.url.startsWith('data:')), [scene])
+    // 이미 입힌 후처리본은 적용 대상에서 뺀다 (원본에만 입힌다).
+    const sceneImages = useMemo(() => (scene?.images ?? []).filter(image => !image.url.startsWith('data:') && !isPostprocessOutput(image.url)), [scene])
     const current = templates.find(template => template.id === currentId) ?? null
     const group = `${section}:${tab[section]}`
 
@@ -214,7 +215,7 @@ function PostprocessPopup({ path, onClose }: { path: string; onClose: () => void
                 title: all
                     ? t('postprocess.appliedAll', '"{{scene}}" 전체에 "{{name}}" 적용 ({{n}}장) · 앞으로 뽑는 이미지에도 자동 적용', { scene: scene?.name, name: templateName, n: result.done })
                     : t('postprocess.appliedSome2', '{{n}}장에 "{{name}}" 적용', { name: templateName, n: result.done }),
-                description: result.skipped > 0 ? t('scenePost.skipped', '{{n}}장은 입히지 못했어요 (비율이 다르거나 파일이 없음).', { n: result.skipped }) : t('postprocess.whereSaved', '같은 폴더 안 "후처리" 폴더에 저장했어요. 원본은 그대로예요.'),
+                description: result.skipped > 0 ? t('scenePost.skipped', '{{n}}장은 입히지 못했어요 (비율이 다르거나 파일이 없음).', { n: result.skipped }) : t('postprocess.whereSaved2', '씬 맨 앞에 후처리본을 새 이미지로 넣었어요. 원본도 그대로 남아요.'),
                 variant: result.skipped > 0 ? 'destructive' : 'success',
             })
             if (result.done > 0) onClose()

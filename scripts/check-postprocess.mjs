@@ -13,3 +13,17 @@ assert.deepEqual(splitPath('a.png'), { folder: '', name: 'a.png' })
 assert.equal(uniqueTemplateName('  ', ['a']), '템플릿 2')
 assert.equal(uniqueTemplateName('말풍선', ['말풍선', '말풍선 (2)']), '말풍선 (3)')
 console.log('Postprocess checks passed.')
+
+// 후처리본: 새 이름 · 폴더 판별
+{
+    const { postprocessOutputName, isPostprocessOutput } = await import('../src/lib/postprocess.ts')
+    assert.equal(postprocessOutputName('NAIS_SCENE_1.webp', 1760000000000), 'NAIS_SCENE_1_후처리_1760000000000.png')
+    assert.equal(isPostprocessOutput('C:\\x\\1 기본\\후처리\\a.png'), true)
+    assert.equal(isPostprocessOutput('/x/1 기본/a.png'), false)
+    const { latestImagePerScene } = await import('../src/lib/scene-i2i-cycle.ts')
+    const picks = latestImagePerScene([{ id: 's', images: [{ url: 'C:\\x\\후처리\\b.png', timestamp: 9 }, { url: 'C:\\x\\a.png', timestamp: 1 }] }])
+    assert.equal(picks[0].path, 'C:\\x\\a.png')
+    const { getSceneFolderFromImages } = await import('../src/lib/scene-path.ts')
+    assert.equal(getSceneFolderFromImages([{ url: 'C:\\x\\s\\후처리\\b.png' }, { url: 'C:\\x\\s\\a.png' }]), 'C:\\x\\s')
+    console.log('postprocess output checks passed')
+}

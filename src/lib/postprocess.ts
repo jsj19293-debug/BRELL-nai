@@ -24,6 +24,18 @@ export function postprocessFileName(fileName: string): string {
     return `${stem || 'image'}.png`
 }
 
+/** 후처리본 이름 (항상 PNG, 다시 입혀도 겹치지 않게 시각을 붙인다): "NAIS_SCENE_1.webp" → "NAIS_SCENE_1_후처리_1760000000000.png" */
+export function postprocessOutputName(fileName: string, stamp: number): string {
+    const stem = fileName.replace(/\.[a-z0-9]{2,5}$/i, '')
+    return `${stem || 'image'}_${POSTPROCESS_FOLDER_NAME}_${stamp}.png`
+}
+
+/** 후처리 폴더 안에 있는 그림(=후처리본)인지 */
+export function isPostprocessOutput(path: string): boolean {
+    const parts = path.replace(/\\/g, '/').split('/')
+    return parts.length >= 2 && parts[parts.length - 2] === POSTPROCESS_FOLDER_NAME
+}
+
 /** 경로에서 폴더와 파일 이름 나누기 (\ 와 / 둘 다) */
 export function splitPath(path: string): { folder: string; name: string } {
     const index = Math.max(path.lastIndexOf('\\'), path.lastIndexOf('/'))

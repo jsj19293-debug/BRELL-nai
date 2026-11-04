@@ -4,11 +4,12 @@
  * - 같은 출처라서 iframe 안의 window.nightmareBridge 를 바로 부른다.
  */
 import { join } from '@tauri-apps/api/path'
-import { mkdir, readFile, writeFile, exists } from '@tauri-apps/plugin-fs'
+import { mkdir, readFile, writeFile, exists, remove } from '@tauri-apps/plugin-fs'
 import { useSceneStore } from '@/stores/scene-store'
 import { usePostprocessStore } from '@/stores/postprocess-store'
 import { bytesToDataUrl, imageMimeForPath } from '@/lib/scene-i2i-cycle'
-import { POSTPROCESS_FOLDER_NAME, postprocessFileName, sameAspect, splitPath } from '@/lib/postprocess'
+import { POSTPROCESS_FOLDER_NAME, isPostprocessOutput, postprocessOutputName, sameAspect, splitPath } from '@/lib/postprocess'
+import { pathKey } from '@/lib/scene-folder-sync'
 
 export const BALLOON_STUDIO_URL = '/balloon/index.html'
 
@@ -93,7 +94,7 @@ let queue: Promise<unknown> = Promise.resolve()
 export type PostprocessOutcome = { ok: true; path: string } | { ok: false; reason: 'no-template' | 'aspect' | 'failed'; error?: string }
 
 /**
- * 이미지 한 장에 템플릿을 입혀 <그 이미지 폴더>/후처리/<이름>.png 로 저장한다. 원본은 그대로.
+ * 이미지 한 장에 템플릿을 입혀 <그 이미지 폴더>/후처리/<이름>_후처리_<시각>.png 로 저장하고, 그 씬 맨 앞에 새 이미지로 넣는다. 원본은 그대로.
  * 한 번에 하나씩 차례로 처리한다.
  */
 export function postprocessImageFile(templateId: string, imagePath: string): Promise<PostprocessOutcome> {
@@ -107,11 +108,19 @@ export function postprocessImageFile(templateId: string, imagePath: string): Pro
             const bridge = await rendererBridge()
             const png = await bridge.render(template.doc, dataUrl)
             const { folder, name } = splitPath(imagePath)
-            const outFolder = await join(folder, POSTPROCESS_FOLDER_NAME)
+            // 후처리본에 또 입히면 같은 후처리 폴더에 둔다 (후처리/후처리 로 겹치지 않게).
+            const outFolder = isPostprocessOutput(imagePath) ? folder : await join(folder, POSTPROCESS_FOLDER_NAME)
             if (!(await exists(outFolder))) await mkdir(outFolder, { recursive: true })
-            const outPath = await join(outFolder, postprocessFileName(name))
+            const stamp = Date.now()
+            const outPath = await join(outFolder, postprocessOutputName(name, stamp))
             await writeFile(outPath, dataUrlToBytes(png))
+            const previous = usePostprocessStore.getState().applied[pathKey(imagePath)]?.output
             usePostprocessStore.getState().markApplied(imagePath, templateId, outPath)
+            addOutputToScenes(imagePath, outPath, stamp, previous)
+            // 같은 원본에 다시 입히면 예전 후처리본은 새것으로 바뀐다 (후처리 폴더 안의 것만 지운다).
+            if (previous && pathKey(previous) !== pathKey(outPath) && isPostprocessOutput(previous)) {
+                await remove(previous).catch(error => console.warn('Failed to remove the old postprocess output:', previous, error))
+            }
             return { ok: true, path: outPath }
         } catch (error) {
             console.warn('Postprocess failed:', imagePath, error)
@@ -120,6 +129,28 @@ export function postprocessImageFile(templateId: string, imagePath: string): Pro
     })
     queue = run.catch(() => undefined)
     return run
+}
+
+/** 원본이 들어 있는 씬마다 후처리본을 새 이미지로 맨 앞(최신)에 넣는다. */
+function addOutputToScenes(sourcePath: string, outPath: string, stamp: number, previousOutput?: string): void {
+    const sourceKey = pathKey(sourcePath)
+    const outKey = pathKey(outPath)
+    const previousKey = previousOutput ? pathKey(previousOutput) : null
+    useSceneStore.setState(state => ({
+        presets: state.presets.map(preset => {
+            if (!preset.scenes.some(scene => scene.images.some(image => pathKey(image.url) === sourceKey))) return preset
+            return {
+                ...preset,
+                scenes: preset.scenes.map(scene => {
+                    if (!scene.images.some(image => pathKey(image.url) === sourceKey)) return scene
+                    if (scene.images.some(image => pathKey(image.url) === outKey)) return scene
+                    const image = { id: `post-${stamp}-${Math.random().toString(36).slice(2, 8)}`, url: outPath, timestamp: stamp, isFavorite: false }
+                    const rest = previousKey ? scene.images.filter(item => pathKey(item.url) !== previousKey) : scene.images
+                    return { ...scene, images: [image, ...rest] }
+                }),
+            }
+        }),
+    }))
 }
 
 async function imageSize(dataUrl: string): Promise<{ width: number; height: number }> {
@@ -165,7 +196,7 @@ export async function postprocessExistingSceneImages(presetId: string, sceneId: 
     let done = 0
     let skipped = 0
     for (const image of scene?.images ?? []) {
-        if (image.url.startsWith('data:')) continue
+        if (image.url.startsWith('data:') || isPostprocessOutput(image.url)) continue
         const result = await postprocessImageFile(templateId, image.url)
         if (result.ok) done++
         else skipped++

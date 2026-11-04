@@ -66,6 +66,7 @@ import { SceneCustomCharacterDialog } from '@/components/scene/SceneCustomCharac
 import { subscribeScenePromptDraftFlush } from '@/lib/scene-prompt-drafts'
 import { formatShotTime } from '@/lib/scene-job-done'
 import { usePostprocessStore } from '@/stores/postprocess-store'
+import { isPostprocessOutput } from '@/lib/postprocess'
 import { pathKey } from '@/lib/scene-folder-sync'
 
 export default function SceneDetail() {
@@ -1056,7 +1057,11 @@ function SceneImageCard({
                 )}
 
                 {/* 후처리를 입힌 이미지 */}
-                {postApplied && (
+                {isPostprocessOutput(image.url) ? (
+                    <span className="pointer-events-none absolute bottom-2 right-2 z-10 rounded-md bg-emerald-600/90 px-1.5 py-0.5 text-[11px] font-semibold text-white" data-image-postprocess-output>
+                        후처리본
+                    </span>
+                ) : postApplied && (
                     <span className="pointer-events-none absolute bottom-2 right-2 z-10 rounded-md bg-primary/85 px-1.5 py-0.5 text-[11px] font-semibold text-primary-foreground" data-image-postprocess-badge>
                         +후처리 적용중
                     </span>

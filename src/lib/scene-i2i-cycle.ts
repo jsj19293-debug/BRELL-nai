@@ -91,6 +91,8 @@ export function latestImagePerScene<Image extends { url: string; timestamp: numb
         for (const image of scene.images) {
             // 아직 파일로 저장되지 않은 미리보기(data:)는 쓰지 않는다.
             if (image.url.startsWith('data:')) continue
+            // 말풍선 · 에셋을 입힌 후처리본은 I2I 원본으로 쓰지 않는다.
+            if (/[\\/]후처리[\\/][^\\/]+$/.test(image.url)) continue
             if (!latest || image.timestamp >= latest.timestamp) latest = image
         }
         if (latest) picks.push({ sceneId: scene.id, path: latest.url })

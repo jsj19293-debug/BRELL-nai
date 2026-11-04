@@ -20,6 +20,8 @@ export function getSceneFolderFromImages(images: SceneImagePathLike[]): string |
     for (const image of images) {
         const path = image.url.trim()
         if (!path || path.startsWith('data:') || /^[a-z][a-z0-9+.-]*:\/\//i.test(path)) continue
+        // 후처리본은 씬 폴더 안 "후처리" 폴더에 있어서 씬 폴더로 보지 않는다.
+        if (/[\\/]후처리[\\/][^\\/]+$/.test(path)) continue
 
         const separatorIndex = Math.max(path.lastIndexOf('\\'), path.lastIndexOf('/'))
         if (separatorIndex > 0) return path.slice(0, separatorIndex)
